@@ -4,6 +4,7 @@ const { Sequelize } = require('sequelize');
 const sequelize = new Sequelize(process.env.POST_DB, process.env.POST_USERNAME,process.env.POST_PASSWORD , {
   host: process.env.POSTGRES_HOST,
   dialect: 'postgres',
+  dialectModule: require('pg')
 });
 
 (async () => {
