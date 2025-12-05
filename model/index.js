@@ -3,5 +3,6 @@ module.exports={
     token:require("./Token"),
     stripeProduct:require("./StripeProduct"),
     stripePrice:require("./StripePrice"),
-    userSubscription:require("./UserSubscription")
+    userSubscription:require("./UserSubscription"),
+    transaction:require("./Transaction")
 }

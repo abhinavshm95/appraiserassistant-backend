@@ -3,5 +3,6 @@ module.exports={
     carRoute:require("./carRoute"),
     authRoute:require("./authRoute"),
     stripeRoute:require("./stripeRoute"),
+    stripeWebhookRoute:require("./stripeWebhookRoute"),
     adminSubscriptionRoute:require("./adminSubscriptionRoute")
 }
