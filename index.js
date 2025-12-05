@@ -3,6 +3,7 @@ const express = require("express");
 const connectDb = require("./connect/connection.js");
 const cors = require("cors");
 const route = require("./Route.js");
+const stripeWebhookRoute = require("./Route/stripeWebhookRoute.js");
 const app = express();
 const path=require("path")
 const ejs = require('ejs');
@@ -34,6 +35,12 @@ app.use(cors({
   },
   credentials: true
 }));
+
+/**
+ * IMPORTANT: Stripe webhook route must be registered BEFORE express.json() middleware
+ * Stripe requires the raw body (not parsed) for signature verification
+ */
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookRoute);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
