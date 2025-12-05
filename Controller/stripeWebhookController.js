@@ -42,9 +42,26 @@ const handleWebhook = async (req, res) => {
 
     try {
         // Verify webhook signature using raw body
-        event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+        // On Vercel, req.body from express.raw() is a Buffer - convert to string for Stripe
+        const payload = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body;
+
+        // Debug logging (remove after fixing)
+        console.log("Webhook received:", {
+            bodyType: typeof req.body,
+            isBuffer: Buffer.isBuffer(req.body),
+            bodyLength: req.body?.length,
+            sigHeader: sig?.substring(0, 50) + "...",
+            hasWebhookSecret: !!webhookSecret
+        });
+
+        event = stripe.webhooks.constructEvent(payload, sig, webhookSecret);
     } catch (err) {
         console.error(`Webhook signature verification failed: ${err.message}`);
+        console.error("Debug info:", {
+            bodyType: typeof req.body,
+            isBuffer: Buffer.isBuffer(req.body),
+            bodyPreview: typeof req.body === 'string' ? req.body.substring(0, 100) : 'N/A'
+        });
         return res.status(400).json({ error: `Webhook Error: ${err.message}` });
     }
 

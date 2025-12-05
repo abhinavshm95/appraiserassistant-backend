@@ -3,5 +3,6 @@ module.exports={
     carController:require("./carController"),
     authController:require("./authController"),
     stripeController:require("./stripeController"),
-    stripeWebhookController:require("./stripeWebhookController")
+    stripeWebhookController:require("./stripeWebhookController"),
+    googleAuthController:require("./googleAuthController")
 }
