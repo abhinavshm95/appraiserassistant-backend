@@ -4,7 +4,7 @@ const userSchema=new Mongoose.Schema({
     name:String,
     email:String,
     password:String,
-    phone:Number,
+    phone:String,
     otp:String,
     accessToken:String,
     isEmailVerified:{
@@ -19,6 +19,20 @@ const userSchema=new Mongoose.Schema({
         type:String,
         enum:["standard","admin"],
         default:"standard"
+    },
+    // OAuth fields
+    googleId: {
+        type: String,
+        sparse: true,
+        index: true
+    },
+    authProvider: {
+        type: String,
+        enum: ["local", "google"],
+        default: "local"
+    },
+    profilePicture: {
+        type: String
     }
 }, {
     timestamps: true
