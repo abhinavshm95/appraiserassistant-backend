@@ -10,8 +10,16 @@ const ejs = require('ejs');
 const PORT = process.env.PORT || 5000;
 const cookieParser = require("cookie-parser");
 
-// Connect to database
-connectDb();
+// Middleware to ensure DB connection before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await connectDb();
+    next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    res.status(500).json({ error: "Database connection failed" });
+  }
+});
 
 app.use(cookieParser());
 
