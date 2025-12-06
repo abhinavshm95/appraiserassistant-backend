@@ -8,6 +8,10 @@ router.post("/login",userController.login)
 router.put("/emailverification",userController.emailVerification)
 router.put("/changePassword", auth.authenticate, userController.changePassword)
 
+// Profile routes
+router.get("/profile", auth.authenticate, userController.getProfile)
+router.put("/profile", auth.authenticate, userController.updateProfile)
+
 // Admin routes for user management
 router.get("/list", auth.authenticate, auth.isAdmin, userController.listUsers)
 router.get("/:id", auth.authenticate, auth.isAdmin, userController.getUserById)

@@ -301,6 +301,90 @@ const deleteUser = async (req, res, next) => {
   }
 };
 
+const getProfile = async (req, res, next) => {
+  try {
+    const user = await Model.user
+      .findOne({ email: req.user.email })
+      .select("-password -otp -accessToken");
+
+    if (!user) {
+      return universalFunction.errorFunction(
+        req,
+        res,
+        code.statusCodes.STATUS_CODE.BAD_REQUEST,
+        message.messages.MESSAGES.USER_NOT_EXIST
+      );
+    }
+
+    return universalFunction.successFunction(
+      req,
+      res,
+      code.statusCodes.STATUS_CODE.SUCCESS,
+      message.messages.MESSAGES.FETCHED_SUCCESSFULLY,
+      user
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateProfile = async (req, res, next) => {
+  try {
+    const user = await Model.user.findOne({ email: req.user.email });
+
+    if (!user) {
+      return universalFunction.errorFunction(
+        req,
+        res,
+        code.statusCodes.STATUS_CODE.BAD_REQUEST,
+        message.messages.MESSAGES.USER_NOT_EXIST
+      );
+    }
+
+    const allowedUpdates = ["name", "phone"];
+    const updates = {};
+
+    for (const field of allowedUpdates) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    if (req.body.phone && req.body.phone !== user.phone) {
+      const phoneExists = await Model.user.findOne({
+        phone: req.body.phone,
+        _id: { $ne: user._id }
+      });
+      if (phoneExists) {
+        return universalFunction.errorFunction(
+          req,
+          res,
+          code.statusCodes.STATUS_CODE.BAD_REQUEST,
+          message.messages.MESSAGES.MOBILE_ALREADY_REGISTER
+        );
+      }
+    }
+
+    const updatedUser = await Model.user
+      .findOneAndUpdate(
+        { email: req.user.email },
+        { $set: updates },
+        { new: true }
+      )
+      .select("-password -otp -accessToken");
+
+    return universalFunction.successFunction(
+      req,
+      res,
+      code.statusCodes.STATUS_CODE.SUCCESS,
+      "Profile updated successfully",
+      updatedUser
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports={
     register,
     login,
@@ -308,5 +392,7 @@ module.exports={
     changePassword,
     listUsers,
     getUserById,
-    deleteUser
+    deleteUser,
+    getProfile,
+    updateProfile
 }
