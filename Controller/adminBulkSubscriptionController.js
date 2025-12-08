@@ -490,7 +490,7 @@ const createAdminPortalSession = async (req, res, next) => {
 
         const session = await stripe.billingPortal.sessions.create({
             customer: userSubscription.stripeCustomerId,
-            return_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/admin/bulk-subscriptions`
+            return_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/bulk-subscriptions`
         });
 
         return universalFunction.successFunction(
