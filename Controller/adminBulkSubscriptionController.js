@@ -120,8 +120,8 @@ const createBulkCheckoutSession = async (req, res, next) => {
                     currency: priceRecord.currency
                 }
             },
-            success_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/admin/bulk-subscriptions/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/admin/bulk-subscriptions/cancel`,
+            success_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/bulk-subscriptions/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/bulk-subscriptions/cancel`,
             metadata: {
                 adminId: admin._id.toString(),
                 type: "bulk_subscription_purchase",
