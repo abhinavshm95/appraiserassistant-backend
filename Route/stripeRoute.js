@@ -15,6 +15,9 @@ router.get("/subscription-status", auth.authenticate, stripeController.getSubscr
 // Create customer portal session (authenticated)
 router.post("/create-portal-session", auth.authenticate, stripeController.createPortalSession);
 
+// Redeem subscription code (authenticated)
+router.post("/redeem-code", auth.authenticate, stripeController.redeemSubscriptionCode);
+
 // Sync products from Stripe (admin only)
 router.post("/sync", auth.authenticate, auth.isAdmin, stripeController.syncStripeData);
 
