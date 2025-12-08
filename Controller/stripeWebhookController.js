@@ -171,6 +171,12 @@ const handleCheckoutSessionCompleted = async (event) => {
     const session = event.data.object;
     console.log(`Checkout session completed: ${session.id}`);
 
+    // Check if this is a bulk subscription purchase
+    if (session.metadata?.type === "bulk_subscription_purchase") {
+        await handleBulkSubscriptionCheckout(session, event.id);
+        return;
+    }
+
     if (session.mode !== "subscription") {
         console.log("Checkout session is not for subscription, skipping");
         return;
@@ -205,6 +211,108 @@ const handleCheckoutSessionCompleted = async (event) => {
     );
 
     console.log(`Subscription activated for user ${userId}`);
+};
+
+/**
+ * Handle bulk subscription checkout completion
+ * Creates bulk purchase record and generates subscription codes after successful subscription
+ */
+const handleBulkSubscriptionCheckout = async (session, eventId) => {
+    const adminId = session.metadata?.adminId;
+    const quantity = parseInt(session.metadata?.quantity || "0");
+    const subscriptionDurationDays = parseInt(session.metadata?.subscriptionDurationDays || "30");
+    const stripePriceId = session.metadata?.stripePriceId;
+    const stripeProductId = session.metadata?.stripeProductId;
+    const unitAmount = parseInt(session.metadata?.unitAmount || "0");
+    const currency = session.metadata?.currency || "usd";
+
+    if (!adminId) {
+        console.error("Missing adminId in bulk checkout metadata");
+        return;
+    }
+
+    if (!quantity || quantity < 1) {
+        console.error("Invalid quantity in bulk checkout metadata");
+        return;
+    }
+
+    console.log(`Processing bulk subscription purchase for admin: ${adminId}, quantity: ${quantity}`);
+
+    // Check if we already processed this subscription (idempotency)
+    const existingPurchase = await Model.bulkSubscriptionPurchase.findOne({
+        stripeSubscriptionId: session.subscription
+    });
+
+    if (existingPurchase) {
+        console.log(`Bulk purchase already exists for subscription: ${session.subscription}`);
+        return;
+    }
+
+    // Create bulk purchase record (only on successful subscription)
+    const bulkPurchase = await Model.bulkSubscriptionPurchase.create({
+        adminId: adminId,
+        stripeCustomerId: session.customer,
+        stripeCheckoutSessionId: session.id,
+        stripeSubscriptionId: session.subscription,
+        stripePriceId: stripePriceId,
+        stripeProductId: stripeProductId,
+        quantity: quantity,
+        unitAmount: unitAmount,
+        totalAmount: unitAmount * quantity,
+        currency: currency,
+        status: "completed",
+        subscriptionDurationDays: subscriptionDurationDays,
+        paidAt: new Date(),
+        codesGenerated: false
+    });
+
+    // Generate unique codes
+    const codes = await Model.bulkSubscriptionCode.generateUniqueCodes(quantity);
+
+    // Set expiration date for codes (1 year from now to give time for distribution)
+    const codeExpirationDate = new Date();
+    codeExpirationDate.setFullYear(codeExpirationDate.getFullYear() + 1);
+
+    // Create code records
+    const codeRecords = codes.map(code => ({
+        purchaseId: bulkPurchase._id,
+        adminId: adminId,
+        code: code,
+        status: "available",
+        stripePriceId: stripePriceId,
+        stripeProductId: stripeProductId,
+        subscriptionDurationDays: subscriptionDurationDays,
+        expiresAt: codeExpirationDate
+    }));
+
+    await Model.bulkSubscriptionCode.insertMany(codeRecords);
+
+    // Mark codes as generated
+    bulkPurchase.codesGenerated = true;
+    await bulkPurchase.save();
+
+    // Create transaction record
+    await Model.transaction.create({
+        userId: adminId,
+        stripeCustomerId: session.customer,
+        stripeSubscriptionId: session.subscription,
+        stripeEventId: eventId,
+        rawEventType: "checkout.session.completed",
+        type: "bulk_subscription_purchase",
+        status: "succeeded",
+        amount: session.amount_total,
+        currency: session.currency,
+        stripePriceId: stripePriceId,
+        stripeProductId: stripeProductId,
+        description: `Bulk subscription purchase: ${quantity} codes`,
+        metadata: {
+            bulkPurchaseId: bulkPurchase._id.toString(),
+            quantity: String(quantity),
+            subscriptionDurationDays: String(subscriptionDurationDays)
+        }
+    });
+
+    console.log(`Created bulk purchase ${bulkPurchase._id} and generated ${quantity} subscription codes`);
 };
 
 /**
@@ -272,6 +380,16 @@ const handleSubscriptionUpdated = async (event) => {
     const previousAttributes = event.data.previous_attributes;
     console.log(`Subscription updated: ${subscription.id}`);
 
+    // Check if this is a bulk subscription purchase
+    const bulkPurchase = await Model.bulkSubscriptionPurchase.findOne({
+        stripeSubscriptionId: subscription.id
+    });
+
+    if (bulkPurchase) {
+        await handleBulkSubscriptionUpdated(bulkPurchase, subscription, previousAttributes, event);
+        return;
+    }
+
     const userSubscription = await Model.userSubscription.findOne({
         stripeSubscriptionId: subscription.id
     });
@@ -327,6 +445,73 @@ const handleSubscriptionUpdated = async (event) => {
 };
 
 /**
+ * Handle bulk subscription updates
+ */
+const handleBulkSubscriptionUpdated = async (bulkPurchase, stripeSubscription, previousAttributes, event) => {
+    // For bulk subscriptions, we mainly track status changes for billing purposes
+    // The codes remain valid regardless of subscription status changes
+
+    const isStatusChange = previousAttributes?.status && previousAttributes.status !== stripeSubscription.status;
+    const isCancellation = previousAttributes?.cancel_at_period_end !== undefined;
+
+    if (isStatusChange || isCancellation) {
+        // Create transaction record for significant updates
+        await Model.transaction.create({
+            userId: bulkPurchase.adminId,
+            stripeCustomerId: stripeSubscription.customer,
+            stripeSubscriptionId: stripeSubscription.id,
+            stripeEventId: event.id,
+            rawEventType: event.type,
+            type: "bulk_subscription_updated",
+            status: "succeeded",
+            amount: stripeSubscription.items.data[0]?.price?.unit_amount * bulkPurchase.quantity || 0,
+            currency: stripeSubscription.currency,
+            stripePriceId: bulkPurchase.stripePriceId,
+            stripeProductId: bulkPurchase.stripeProductId,
+            description: getSubscriptionUpdateDescription(previousAttributes, stripeSubscription),
+            metadata: {
+                bulkPurchaseId: bulkPurchase._id.toString(),
+                previousStatus: previousAttributes?.status || null,
+                newStatus: stripeSubscription.status,
+                cancelAtPeriodEnd: String(stripeSubscription.cancel_at_period_end)
+            }
+        });
+    }
+
+    console.log(`Bulk subscription updated: ${bulkPurchase._id}`);
+};
+
+/**
+ * Handle bulk subscription deletion/cancellation
+ */
+const handleBulkSubscriptionDeleted = async (bulkPurchase, stripeSubscription, event) => {
+    // When a bulk subscription is canceled, we don't revoke the codes
+    // The codes that were already generated remain valid
+
+    // Create transaction record
+    await Model.transaction.create({
+        userId: bulkPurchase.adminId,
+        stripeCustomerId: stripeSubscription.customer,
+        stripeSubscriptionId: stripeSubscription.id,
+        stripeEventId: event.id,
+        rawEventType: event.type,
+        type: "bulk_subscription_canceled",
+        status: "succeeded",
+        amount: 0,
+        currency: stripeSubscription.currency,
+        stripePriceId: bulkPurchase.stripePriceId,
+        stripeProductId: bulkPurchase.stripeProductId,
+        description: `Bulk subscription canceled (${bulkPurchase.quantity} codes remain valid)`,
+        metadata: {
+            bulkPurchaseId: bulkPurchase._id.toString(),
+            quantity: String(bulkPurchase.quantity)
+        }
+    });
+
+    console.log(`Bulk subscription canceled: ${bulkPurchase._id} (codes remain valid)`);
+};
+
+/**
  * Generate description for subscription update
  */
 const getSubscriptionUpdateDescription = (previousAttributes, subscription) => {
@@ -353,6 +538,16 @@ const getSubscriptionUpdateDescription = (previousAttributes, subscription) => {
 const handleSubscriptionDeleted = async (event) => {
     const subscription = event.data.object;
     console.log(`Subscription deleted: ${subscription.id}`);
+
+    // Check if this is a bulk subscription purchase
+    const bulkPurchase = await Model.bulkSubscriptionPurchase.findOne({
+        stripeSubscriptionId: subscription.id
+    });
+
+    if (bulkPurchase) {
+        await handleBulkSubscriptionDeleted(bulkPurchase, subscription, event);
+        return;
+    }
 
     const userSubscription = await Model.userSubscription.findOne({
         stripeSubscriptionId: subscription.id

@@ -256,10 +256,191 @@ const syncStripeData = async (req, res, next) => {
     }
 };
 
+/**
+ * Redeem a subscription code
+ * Activates a subscription for the user using a prepaid code
+ */
+const redeemSubscriptionCode = async (req, res, next) => {
+    try {
+        const { code: subscriptionCode } = req.body;
+        const user = req.user;
+
+        if (!subscriptionCode) {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "Subscription code is required"
+            );
+        }
+
+        // Normalize the code (remove dashes and convert to uppercase)
+        const normalizedCode = subscriptionCode.replace(/-/g, "").toUpperCase();
+        const formattedCode = normalizedCode.match(/.{1,4}/g)?.join("-") || subscriptionCode.toUpperCase();
+
+        // Find the code
+        const codeRecord = await Model.bulkSubscriptionCode.findOne({ code: formattedCode });
+
+        if (!codeRecord) {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "Invalid subscription code"
+            );
+        }
+
+        // Check code status
+        if (codeRecord.status === "redeemed") {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has already been redeemed"
+            );
+        }
+
+        if (codeRecord.status === "revoked") {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has been revoked and is no longer valid"
+            );
+        }
+
+        if (codeRecord.status === "expired" || new Date() > codeRecord.expiresAt) {
+            // Update status if expired
+            if (codeRecord.status !== "expired") {
+                codeRecord.status = "expired";
+                await codeRecord.save();
+            }
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has expired"
+            );
+        }
+
+        // Check if user already has an active subscription
+        const existingSubscription = await Model.userSubscription.findOne({
+            userId: user._id,
+            status: { $in: ["active", "trialing"] }
+        });
+
+        if (existingSubscription) {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "You already have an active subscription. Please wait for it to expire or cancel it first."
+            );
+        }
+
+        // Calculate subscription period
+        const now = new Date();
+        const periodEnd = new Date(now);
+        periodEnd.setDate(periodEnd.getDate() + codeRecord.subscriptionDurationDays);
+
+        // Create or update user subscription
+        let userSubscription = await Model.userSubscription.findOne({ userId: user._id });
+
+        if (userSubscription) {
+            // Update existing record
+            userSubscription.stripePriceId = codeRecord.stripePriceId;
+            userSubscription.stripeProductId = codeRecord.stripeProductId;
+            userSubscription.status = "active";
+            userSubscription.currentPeriodStart = now;
+            userSubscription.currentPeriodEnd = periodEnd;
+            userSubscription.cancelAtPeriodEnd = true; // Prepaid codes don't auto-renew
+            userSubscription.canceledAt = null;
+            userSubscription.endedAt = null;
+            await userSubscription.save();
+        } else {
+            // Create new record - need to create a Stripe customer first for consistency
+            let stripeCustomerId;
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.name,
+                metadata: {
+                    userId: user._id.toString()
+                }
+            });
+            stripeCustomerId = customer.id;
+
+            userSubscription = await Model.userSubscription.create({
+                userId: user._id,
+                stripeCustomerId: stripeCustomerId,
+                stripePriceId: codeRecord.stripePriceId,
+                stripeProductId: codeRecord.stripeProductId,
+                status: "active",
+                currentPeriodStart: now,
+                currentPeriodEnd: periodEnd,
+                cancelAtPeriodEnd: true // Prepaid codes don't auto-renew
+            });
+        }
+
+        // Mark code as redeemed
+        codeRecord.status = "redeemed";
+        codeRecord.redeemedBy = user._id;
+        codeRecord.redeemedAt = now;
+        await codeRecord.save();
+
+        // Create transaction record
+        await Model.transaction.create({
+            userId: user._id,
+            stripeCustomerId: userSubscription.stripeCustomerId,
+            stripeEventId: `code_redemption_${codeRecord._id}`,
+            rawEventType: "code_redemption",
+            type: "subscription_created",
+            status: "succeeded",
+            amount: 0, // No payment - prepaid code
+            currency: "usd",
+            stripePriceId: codeRecord.stripePriceId,
+            stripeProductId: codeRecord.stripeProductId,
+            periodStart: now,
+            periodEnd: periodEnd,
+            description: `Subscription activated via prepaid code`,
+            metadata: {
+                codeId: codeRecord._id.toString(),
+                code: codeRecord.code,
+                purchaseId: codeRecord.purchaseId.toString(),
+                subscriptionDurationDays: String(codeRecord.subscriptionDurationDays)
+            }
+        });
+
+        // Get product name for response
+        const product = await Model.stripeProduct.findOne({
+            stripeProductId: codeRecord.stripeProductId
+        });
+
+        return universalFunction.successFunction(
+            req,
+            res,
+            code.statusCodes.STATUS_CODE.SUCCESS,
+            "Subscription activated successfully!",
+            {
+                subscription: {
+                    status: "active",
+                    productName: product?.name || "Subscription",
+                    currentPeriodStart: now,
+                    currentPeriodEnd: periodEnd,
+                    durationDays: codeRecord.subscriptionDurationDays
+                }
+            }
+        );
+    } catch (err) {
+        console.error("Error redeeming subscription code:", err);
+        next(err);
+    }
+};
+
 module.exports = {
     createCheckoutSession,
     getSubscriptionStatus,
     getProducts,
     createPortalSession,
-    syncStripeData
+    syncStripeData,
+    redeemSubscriptionCode
 };
