@@ -4,5 +4,7 @@ module.exports={
     stripeProduct:require("./StripeProduct"),
     stripePrice:require("./StripePrice"),
     userSubscription:require("./UserSubscription"),
-    transaction:require("./Transaction")
+    transaction:require("./Transaction"),
+    bulkSubscriptionPurchase:require("./BulkSubscriptionPurchase"),
+    bulkSubscriptionCode:require("./BulkSubscriptionCode")
 }
