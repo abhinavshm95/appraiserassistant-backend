@@ -18,6 +18,9 @@ router.post("/create-portal-session", auth.authenticate, stripeController.create
 // Redeem subscription code (authenticated)
 router.post("/redeem-code", auth.authenticate, stripeController.redeemSubscriptionCode);
 
+// Validate subscription code (public - for preview before signup)
+router.post("/validate-code", stripeController.validateSubscriptionCode);
+
 // Sync products from Stripe (admin only)
 router.post("/sync", auth.authenticate, auth.isAdmin, stripeController.syncStripeData);
 

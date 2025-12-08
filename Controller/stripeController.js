@@ -110,6 +110,9 @@ const getSubscriptionStatus = async (req, res, next) => {
         // Check if subscription is active
         const isActive = ["active", "trialing"].includes(userSubscription.status);
 
+        // Code-based subscriptions don't have a stripeSubscriptionId
+        const isCodeBased = !userSubscription.stripeSubscriptionId;
+
         return universalFunction.successFunction(
             req,
             res,
@@ -120,7 +123,8 @@ const getSubscriptionStatus = async (req, res, next) => {
                 subscription: {
                     status: userSubscription.status,
                     currentPeriodEnd: userSubscription.currentPeriodEnd,
-                    cancelAtPeriodEnd: userSubscription.cancelAtPeriodEnd
+                    cancelAtPeriodEnd: userSubscription.cancelAtPeriodEnd,
+                    isCodeBased: isCodeBased
                 }
             }
         );
@@ -436,11 +440,108 @@ const redeemSubscriptionCode = async (req, res, next) => {
     }
 };
 
+/**
+ * Validate a subscription code (public endpoint - no auth required)
+ * Returns code details without redeeming it
+ */
+const validateSubscriptionCode = async (req, res, next) => {
+    try {
+        const { code: subscriptionCode } = req.body;
+
+        if (!subscriptionCode) {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "Subscription code is required"
+            );
+        }
+
+        // Normalize the code (remove dashes and convert to uppercase)
+        const normalizedCode = subscriptionCode.replace(/-/g, "").toUpperCase();
+        const formattedCode = normalizedCode.match(/.{1,4}/g)?.join("-") || subscriptionCode.toUpperCase();
+
+        // Find the code
+        const codeRecord = await Model.bulkSubscriptionCode.findOne({ code: formattedCode });
+
+        if (!codeRecord) {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "Invalid subscription code"
+            );
+        }
+
+        // Check code status
+        if (codeRecord.status === "redeemed") {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has already been redeemed"
+            );
+        }
+
+        if (codeRecord.status === "revoked") {
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has been revoked and is no longer valid"
+            );
+        }
+
+        if (codeRecord.status === "expired" || new Date() > codeRecord.expiresAt) {
+            // Update status if expired
+            if (codeRecord.status !== "expired") {
+                codeRecord.status = "expired";
+                await codeRecord.save();
+            }
+            return universalFunction.errorFunction(
+                req,
+                res,
+                code.statusCodes.STATUS_CODE.BAD_REQUEST,
+                "This code has expired"
+            );
+        }
+
+        // Get product details
+        const product = await Model.stripeProduct.findOne({
+            stripeProductId: codeRecord.stripeProductId
+        });
+
+        const price = await Model.stripePrice.findOne({
+            stripePriceId: codeRecord.stripePriceId
+        });
+
+        return universalFunction.successFunction(
+            req,
+            res,
+            code.statusCodes.STATUS_CODE.SUCCESS,
+            "Valid subscription code",
+            {
+                valid: true,
+                productName: product?.name || "Subscription",
+                productDescription: product?.description || "",
+                durationDays: codeRecord.subscriptionDurationDays,
+                expiresAt: codeRecord.expiresAt,
+                originalPrice: price?.unitAmount ? (price.unitAmount / 100).toFixed(2) : null,
+                currency: price?.currency?.toUpperCase() || "USD"
+            }
+        );
+    } catch (err) {
+        console.error("Error validating subscription code:", err);
+        next(err);
+    }
+};
+
 module.exports = {
     createCheckoutSession,
     getSubscriptionStatus,
     getProducts,
     createPortalSession,
     syncStripeData,
-    redeemSubscriptionCode
+    redeemSubscriptionCode,
+    validateSubscriptionCode
 };
