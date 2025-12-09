@@ -8,5 +8,6 @@ router.use("/auth",Route.authRoute)
 router.use("/stripe",Route.stripeRoute)
 router.use("/admin/subscriptions",Route.adminSubscriptionRoute)
 router.use("/admin/bulk-subscriptions",Route.adminBulkSubscriptionRoute)
+router.use("/admin/keys",Route.adminKeyRoute)
 
 module.exports=router
