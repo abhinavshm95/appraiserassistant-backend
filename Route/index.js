@@ -5,5 +5,6 @@ module.exports={
     stripeRoute:require("./stripeRoute"),
     stripeWebhookRoute:require("./stripeWebhookRoute"),
     adminSubscriptionRoute:require("./adminSubscriptionRoute"),
-    adminBulkSubscriptionRoute:require("./adminBulkSubscriptionRoute")
+    adminBulkSubscriptionRoute:require("./adminBulkSubscriptionRoute"),
+    adminKeyRoute:require("./adminKeyRoute")
 }

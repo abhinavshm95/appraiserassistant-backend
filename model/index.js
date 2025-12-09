@@ -6,5 +6,6 @@ module.exports={
     userSubscription:require("./UserSubscription"),
     transaction:require("./Transaction"),
     bulkSubscriptionPurchase:require("./BulkSubscriptionPurchase"),
-    bulkSubscriptionCode:require("./BulkSubscriptionCode")
+    bulkSubscriptionCode:require("./BulkSubscriptionCode"),
+    subscriptionKey:require("./SubscriptionKey")
 }
