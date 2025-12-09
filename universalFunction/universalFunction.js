@@ -17,8 +17,8 @@ const errorFunction=(req,res,statusCode,message)=>{
     })
 }
 
-const generateToken=(email)=>{
-    const accessToken=jwt.sign({email:email},"CARvadvdsvfdsv")
+const generateToken=(email, sessionVersion)=>{
+    const accessToken=jwt.sign({email:email, sessionVersion: sessionVersion},"CARvadvdsvfdsv")
     return accessToken
 }
 
@@ -55,8 +55,8 @@ const upload=multer({
     fileFilter:isimg
 })
 
-const generateRefreshToken=(email)=>{
-    const refreshToken=jwt.sign({email:email},"CARvadvdsvfdsv", { expiresIn: '7d' })
+const generateRefreshToken=(email, sessionVersion)=>{
+    const refreshToken=jwt.sign({email:email, sessionVersion: sessionVersion},"CARvadvdsvfdsv", { expiresIn: '7d' })
     return refreshToken
 }
 

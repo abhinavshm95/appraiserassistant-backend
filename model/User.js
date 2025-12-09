@@ -33,6 +33,11 @@ const userSchema=new Mongoose.Schema({
     },
     profilePicture: {
         type: String
+    },
+    // Single-device login: increments on each login to invalidate old sessions
+    sessionVersion: {
+        type: Number,
+        default: 1
     }
 }, {
     timestamps: true

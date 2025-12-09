@@ -25,17 +25,21 @@ const register = async (req, res, next) => {
           message.messages.MESSAGES.MOBILE_ALREADY_REGISTER
         );
       }
-      const accessToken = universalFunction.generateToken(req.body.email);
       const otpCode = Math.floor(Math.random() * 100000 + 100000);
       const hashPassword = await universalFunction.securePassword(
         req.body.password
       );
-      req.body.accessToken = accessToken;
-      const refreshToken = universalFunction.generateRefreshToken(req.body.email);
-      
+
       req.body.password = hashPassword;
       req.body.otp = otpCode;
+      req.body.sessionVersion = 1; // Initialize sessionVersion for new user
       const profile = await Model.user(req.body).save();
+
+      // Generate tokens with sessionVersion
+      const accessToken = universalFunction.generateToken(req.body.email, profile.sessionVersion);
+      const refreshToken = universalFunction.generateRefreshToken(req.body.email, profile.sessionVersion);
+
+      profile.accessToken = accessToken;
       
       // Save refresh token to DB
       await new Model.token({ userId: profile._id, token: refreshToken, type: 'refresh' }).save();
@@ -81,15 +85,25 @@ const login = async (req, res, next) => {
           statusCode:400
         })
       }
- 
-      const accessToken = await universalFunction.generateToken(user.email);
-      const refreshToken = await universalFunction.generateRefreshToken(user.email);
-      
-      // Save refresh token to DB
+
+      // Single-device login: Increment sessionVersion to invalidate all previous sessions
+      const newSessionVersion = (user.sessionVersion || 0) + 1;
+      await Model.user.updateOne(
+        { _id: user._id },
+        { $set: { sessionVersion: newSessionVersion } }
+      );
+
+      // Delete ALL existing refresh tokens for this user (invalidate old sessions)
+      await Model.token.deleteMany({ userId: user._id, type: 'refresh' });
+
+      // Generate tokens with new sessionVersion
+      const accessToken = await universalFunction.generateToken(user.email, newSessionVersion);
+      const refreshToken = await universalFunction.generateRefreshToken(user.email, newSessionVersion);
+
+      // Save new refresh token to DB
       await new Model.token({ userId: user._id, token: refreshToken, type: 'refresh' }).save();
 
       user.accessToken = accessToken;
-      // user.refreshToken = refreshToken; // Removed from body
 
       res.cookie('refreshToken', refreshToken, {
         httpOnly: true,

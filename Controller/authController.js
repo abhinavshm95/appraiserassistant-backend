@@ -77,12 +77,25 @@ const refreshTokens = async (req, res, next) => {
        });
     }
 
+    // Single-device login: Validate sessionVersion
+    if (decoded.sessionVersion !== undefined && decoded.sessionVersion !== user.sessionVersion) {
+      // Delete the stale token
+      await Model.token.findByIdAndDelete(tokenDoc._id);
+
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Session expired. You have been logged in on another device.",
+        code: "SESSION_INVALIDATED",
+      });
+    }
+
     // Delete old token
     await Model.token.findByIdAndDelete(tokenDoc._id);
 
-    const newAccessToken = universalFunction.generateToken(user.email);
+    // Generate new tokens with SAME sessionVersion (not a new login, just refresh)
+    const newAccessToken = universalFunction.generateToken(user.email, user.sessionVersion);
     // Rotate refresh token
-    const newRefreshToken = universalFunction.generateRefreshToken(user.email);
+    const newRefreshToken = universalFunction.generateRefreshToken(user.email, user.sessionVersion);
 
     // Save new token to DB
     await new Model.token({ userId: user._id, token: newRefreshToken, type: 'refresh' }).save();

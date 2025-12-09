@@ -97,9 +97,7 @@ const googleAuth = async (req, res, next) => {
         }
         await user.save();
       } else {
-        // Create new user
-        const accessToken = universalFunction.generateToken(email);
-
+        // Create new user with sessionVersion = 1
         user = await new Model.user({
           name: name || email.split("@")[0],
           email,
@@ -107,27 +105,31 @@ const googleAuth = async (req, res, next) => {
           authProvider: "google",
           profilePicture: picture,
           isEmailVerified: email_verified || false,
-          accessToken,
           role: "standard",
+          sessionVersion: 1,
         }).save();
       }
     }
 
-    // Generate new tokens
-    const accessToken = universalFunction.generateToken(user.email);
-    const refreshToken = universalFunction.generateRefreshToken(user.email);
+    // Single-device login: Increment sessionVersion to invalidate all previous sessions
+    const newSessionVersion = (user.sessionVersion || 0) + 1;
+    user.sessionVersion = newSessionVersion;
 
-    // Delete any existing refresh tokens for this user (optional: for single session)
-    // await Model.token.deleteMany({ userId: user._id, type: 'refresh' });
+    // Generate new tokens with sessionVersion
+    const accessToken = universalFunction.generateToken(user.email, newSessionVersion);
+    const refreshToken = universalFunction.generateRefreshToken(user.email, newSessionVersion);
 
-    // Save refresh token to DB
+    // Delete ALL existing refresh tokens for this user (invalidate old sessions)
+    await Model.token.deleteMany({ userId: user._id, type: 'refresh' });
+
+    // Save new refresh token to DB
     await new Model.token({
       userId: user._id,
       token: refreshToken,
       type: "refresh",
     }).save();
 
-    // Update user's access token
+    // Update user's access token and sessionVersion
     user.accessToken = accessToken;
     await user.save();
 

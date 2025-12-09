@@ -28,6 +28,15 @@ const authenticate = async (req, res, next) => {
         });
       }
 
+      // Single-device login: Check if sessionVersion matches
+      if (decoded.sessionVersion !== undefined && decoded.sessionVersion !== user.sessionVersion) {
+        return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+          statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+          message: "Session expired. You have been logged in on another device.",
+          code: "SESSION_INVALIDATED",
+        });
+      }
+
       req.user = user;
       next();
     } catch (jwtError) {
