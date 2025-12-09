@@ -54,6 +54,13 @@ const bulkSubscriptionCodeSchema = new Mongoose.Schema({
     revokedReason: {
         type: String,
         default: null
+    },
+    // Store previous user when code is revoked from a redeemed state
+    // This allows reactivation for the same user
+    previouslyRedeemedBy: {
+        type: Mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null
     }
 }, {
     timestamps: true
