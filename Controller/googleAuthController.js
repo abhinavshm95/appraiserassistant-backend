@@ -107,13 +107,16 @@ const googleAuth = async (req, res, next) => {
           isEmailVerified: email_verified || false,
           role: "standard",
           sessionVersion: 1,
+          activeDevice: universalFunction.getDeviceInfo(req),
         }).save();
       }
     }
 
     // Single-device login: Increment sessionVersion to invalidate all previous sessions
     const newSessionVersion = (user.sessionVersion || 0) + 1;
+    const deviceInfo = universalFunction.getDeviceInfo(req);
     user.sessionVersion = newSessionVersion;
+    user.activeDevice = deviceInfo;
 
     // Generate new tokens with sessionVersion
     const accessToken = universalFunction.generateToken(user.email, newSessionVersion);

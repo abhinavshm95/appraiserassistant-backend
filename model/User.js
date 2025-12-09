@@ -38,6 +38,15 @@ const userSchema=new Mongoose.Schema({
     sessionVersion: {
         type: Number,
         default: 1
+    },
+    // Current active device info
+    activeDevice: {
+        ip: String,
+        userAgent: String,
+        browser: String,
+        os: String,
+        device: String,
+        loginAt: Date
     }
 }, {
     timestamps: true

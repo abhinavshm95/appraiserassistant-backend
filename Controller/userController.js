@@ -33,6 +33,7 @@ const register = async (req, res, next) => {
       req.body.password = hashPassword;
       req.body.otp = otpCode;
       req.body.sessionVersion = 1; // Initialize sessionVersion for new user
+      req.body.activeDevice = universalFunction.getDeviceInfo(req); // Capture device info on registration
       const profile = await Model.user(req.body).save();
 
       // Generate tokens with sessionVersion
@@ -88,9 +89,11 @@ const login = async (req, res, next) => {
 
       // Single-device login: Increment sessionVersion to invalidate all previous sessions
       const newSessionVersion = (user.sessionVersion || 0) + 1;
+      const deviceInfo = universalFunction.getDeviceInfo(req);
+
       await Model.user.updateOne(
         { _id: user._id },
-        { $set: { sessionVersion: newSessionVersion } }
+        { $set: { sessionVersion: newSessionVersion, activeDevice: deviceInfo } }
       );
 
       // Delete ALL existing refresh tokens for this user (invalidate old sessions)
