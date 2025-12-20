@@ -72,7 +72,53 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
+const isManager = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "manager") {
+      return res.status(code.statusCodes.STATUS_CODE.ACCESS_NOT_ALLOWED).json({
+        statusCode: code.statusCodes.STATUS_CODE.ACCESS_NOT_ALLOWED,
+        message: "Manager access required",
+      });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+const isManagerOrAdmin = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin" && req.user.role !== "manager") {
+      return res.status(code.statusCodes.STATUS_CODE.ACCESS_NOT_ALLOWED).json({
+        statusCode: code.statusCodes.STATUS_CODE.ACCESS_NOT_ALLOWED,
+        message: "Admin or Manager access required",
+      });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   authenticate,
   isAdmin,
+  isManager,
+  isManagerOrAdmin,
 };
