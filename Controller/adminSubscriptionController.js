@@ -16,7 +16,13 @@ const getAllSubscriptions = async (req, res) => {
     if (plan && plan !== "all") {
       filter.stripePriceId = plan;
     }
+    // Get subscriptions with user data
+    // Filter out admins and managers (who shouldn't have individual subscriptions in this view)
+    const excludedRoles = ["admin", "manager"];
+    const excludedUsers = await User.find({ role: { $in: excludedRoles } }, "_id");
+    const excludedUserIds = excludedUsers.map((u) => u._id);
 
+    filter.userId = { $nin: excludedUserIds };
     // Get subscriptions with user data
     const subscriptions = await UserSubscription.find(filter)
       .populate("userId", "name email")
@@ -37,10 +43,51 @@ const getAllSubscriptions = async (req, res) => {
       };
     });
 
+    // Fetch subscription codes for these users to identify prepaid subscriptions
+    const BulkSubscriptionCode = require("../model/BulkSubscriptionCode");
+    const userIds = subscriptions.map((s) => s.userId._id);
+    const codes = await BulkSubscriptionCode.find({
+      redeemedBy: { $in: userIds },
+      status: "redeemed", // We only care about redeemed codes
+    })
+      .sort({ redeemedAt: -1 }) // Get latest first
+      .populate("purchaseId");
+
+    // Create map of userId -> latest code
+    const userCodeMap = {};
+    codes.forEach((code) => {
+      // Since we sort by redeemedAt desc, the first one we see is the latest
+      if (!userCodeMap[code.redeemedBy.toString()]) {
+        userCodeMap[code.redeemedBy.toString()] = code;
+      }
+    });
+
     // Transform data to match frontend structure
     const transformedSubscriptions = subscriptions.map((sub) => {
       const user = sub.userId || {};
       const priceInfo = priceMap[sub.stripePriceId] || {};
+
+      // Determine source and payment method
+      let source = "stripe";
+      let paymentMethod = "stripe";
+      let prepaidKey = null;
+
+      if (!sub.stripeSubscriptionId) {
+        // likely a key based subscription
+        const uniqueUserId = user._id?.toString();
+        const code = userCodeMap[uniqueUserId];
+
+        if (code) {
+          paymentMethod = "prepaid_key";
+          prepaidKey = code.code;
+
+          if (code.purchaseId && code.purchaseId.totalAmount === 0) {
+            source = "admin";
+          } else {
+            source = "purchased";
+          }
+        }
+      }
 
       // Determine plan type
       let planType = "monthly";
@@ -55,18 +102,14 @@ const getAllSubscriptions = async (req, res) => {
         userEmail: user.email || "No email",
         plan: planType,
         status: sub.status,
-        paymentMethod: "stripe", // All current subscriptions are Stripe
+        paymentMethod,
+        source, // New field
+        prepaidKey, // New field
         amount: priceInfo.amount || 0,
-        startDate: sub.currentPeriodStart
-          ? new Date(sub.currentPeriodStart).toISOString().split("T")[0]
-          : "",
-        endDate: sub.currentPeriodEnd
-          ? new Date(sub.currentPeriodEnd).toISOString().split("T")[0]
-          : "",
+        startDate: sub.currentPeriodStart ? new Date(sub.currentPeriodStart).toISOString().split("T")[0] : "",
+        endDate: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toISOString().split("T")[0] : "",
         autoRenew: !sub.cancelAtPeriodEnd,
-        lastPayment: sub.currentPeriodStart
-          ? new Date(sub.currentPeriodStart).toISOString().split("T")[0]
-          : "",
+        lastPayment: sub.currentPeriodStart ? new Date(sub.currentPeriodStart).toISOString().split("T")[0] : "",
         stripeSubscriptionId: sub.stripeSubscriptionId,
         stripeCustomerId: sub.stripeCustomerId,
       };
@@ -98,9 +141,14 @@ const getAllSubscriptions = async (req, res) => {
 const getSubscriptionStats = async (req, res) => {
   try {
     // Get all subscriptions
-    const allSubscriptions = await UserSubscription.find().populate(
+    // Filter out admins and managers
+    const excludedRoles = ["admin", "manager"];
+    const excludedUsers = await User.find({ role: { $in: excludedRoles } }, "_id");
+    const excludedUserIds = excludedUsers.map((u) => u._id);
+
+    const allSubscriptions = await UserSubscription.find({ userId: { $nin: excludedUserIds } }).populate(
       "userId",
-      "name email"
+      "name email",
     );
 
     // Get all prices for amount mapping
@@ -116,9 +164,7 @@ const getSubscriptionStats = async (req, res) => {
 
     // Calculate stats
     const total = allSubscriptions.length;
-    const active = allSubscriptions.filter(
-      (s) => s.status === "active"
-    ).length;
+    const active = allSubscriptions.filter((s) => s.status === "active").length;
 
     // Calculate monthly revenue (from monthly plans only)
     const monthlyRevenue = allSubscriptions
@@ -164,10 +210,7 @@ const getSubscriptionById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const subscription = await UserSubscription.findById(id).populate(
-      "userId",
-      "name email"
-    );
+    const subscription = await UserSubscription.findById(id).populate("userId", "name email");
 
     if (!subscription) {
       return res.status(404).json({
@@ -209,9 +252,7 @@ const getSubscriptionById = async (req, res) => {
       startDate: subscription.currentPeriodStart
         ? new Date(subscription.currentPeriodStart).toISOString().split("T")[0]
         : "",
-      endDate: subscription.currentPeriodEnd
-        ? new Date(subscription.currentPeriodEnd).toISOString().split("T")[0]
-        : "",
+      endDate: subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toISOString().split("T")[0] : "",
       autoRenew: !subscription.cancelAtPeriodEnd,
       lastPayment: subscription.currentPeriodStart
         ? new Date(subscription.currentPeriodStart).toISOString().split("T")[0]

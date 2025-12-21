@@ -11,7 +11,7 @@ const me = async (req, res, next) => {
       res,
       code.statusCodes.STATUS_CODE.SUCCESS,
       message.messages.MESSAGES.FETCHED_SUCCESSFULLY,
-      req.user
+      req.user,
     );
   } catch (err) {
     next(err);
@@ -20,7 +20,7 @@ const me = async (req, res, next) => {
 
 const refreshTokens = async (req, res, next) => {
   try {
-    // The frontend might send refreshToken in body or cookie. 
+    // The frontend might send refreshToken in body or cookie.
     // Based on plan, we expect it in body for now as we didn't set up cookies explicitly in frontend yet (though axios has withCredentials=true).
     // Let's support body for now as per common JWT patterns if not using httpOnly cookies strictly.
     // Actually, the frontend code I saw earlier: `api.post('/auth/refresh-tokens')` - it didn't send data in body, so it might expect cookie?
@@ -38,43 +38,51 @@ const refreshTokens = async (req, res, next) => {
     // I should probably stick to the simplest working solution first.
     // If I change frontend to send body, I need to update frontend.
     // If I change backend to set cookie, I need to update `userController` again.
-    
+
     // Let's check `userController` again. I just added `refreshToken` to the returned user object.
     // So frontend receives it.
     // The frontend `api-client.ts` calls `api.post('/auth/refresh-tokens')`.
     // It does NOT pass the refresh token.
     // So currently, it won't work unless it's in a cookie.
-    
+
     // I will assume for now that I should support receiving it in the body, AND I should update the frontend to send it.
     // OR, I can check if `req.cookies` has it.
-    
+
     // Read from cookie
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (!refreshToken) {
-       return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
-         statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
-         message: "Refresh token required",
-       });
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Refresh token required",
+      });
     }
 
     // Verify token in DB
-    const tokenDoc = await Model.token.findOne({ token: refreshToken, type: 'refresh' });
+    const tokenDoc = await Model.token.findOne({ token: refreshToken, type: "refresh" });
     if (!tokenDoc) {
-        return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
-            statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
-            message: "Invalid or expired refresh token",
-        });
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Invalid or expired refresh token",
+      });
     }
 
     const decoded = jwt.verify(refreshToken, "CARvadvdsvfdsv"); // Use env var in real app
     const user = await Model.user.findOne({ email: decoded.email });
 
     if (!user) {
-       return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
-         statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
-         message: "User not found",
-       });
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "User not found",
+      });
+    }
+
+    // Check if user is active
+    if (user.isActive === false) {
+      return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
+        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+        message: "Your account has been deactivated. Please contact support.",
+      });
     }
 
     // Single-device login: Validate sessionVersion
@@ -98,14 +106,14 @@ const refreshTokens = async (req, res, next) => {
     const newRefreshToken = universalFunction.generateRefreshToken(user.email, user.sessionVersion);
 
     // Save new token to DB
-    await new Model.token({ userId: user._id, token: newRefreshToken, type: 'refresh' }).save();
+    await new Model.token({ userId: user._id, token: newRefreshToken, type: "refresh" }).save();
 
     // Set new cookie
-    res.cookie('refreshToken', newRefreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     return universalFunction.successFunction(
@@ -116,39 +124,33 @@ const refreshTokens = async (req, res, next) => {
       {
         accessToken: newAccessToken,
         // refreshToken: newRefreshToken // Removed from body
-      }
+      },
     );
-
   } catch (err) {
     return res.status(code.statusCodes.STATUS_CODE.UNAUTHORIZED).json({
-        statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
-        message: "Invalid refresh token",
-      });
+      statusCode: code.statusCodes.STATUS_CODE.UNAUTHORIZED,
+      message: "Invalid refresh token",
+    });
   }
 };
 
 const logout = async (req, res, next) => {
   try {
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (refreshToken) {
       // Delete from DB if exists
       await Model.token.findOneAndDelete({ token: refreshToken });
     }
 
     // Clear cookie
-    res.clearCookie('refreshToken', {
+    res.clearCookie("refreshToken", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict'
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
     });
 
-    return universalFunction.successFunction(
-      req,
-      res,
-      code.statusCodes.STATUS_CODE.SUCCESS,
-      "Logged out successfully"
-    );
+    return universalFunction.successFunction(req, res, code.statusCodes.STATUS_CODE.SUCCESS, "Logged out successfully");
   } catch (err) {
     next(err);
   }
@@ -157,5 +159,5 @@ const logout = async (req, res, next) => {
 module.exports = {
   me,
   refreshTokens,
-  logout
+  logout,
 };
