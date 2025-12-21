@@ -21,6 +21,10 @@ const userSchema = new Mongoose.Schema(
       enum: ["standard", "admin", "manager"],
       default: "standard",
     },
+    stripeCustomerId: {
+      type: String,
+      sparse: true,
+    },
     // OAuth fields
     googleId: {
       type: String,
@@ -48,6 +52,10 @@ const userSchema = new Mongoose.Schema(
       os: String,
       device: String,
       loginAt: Date,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {

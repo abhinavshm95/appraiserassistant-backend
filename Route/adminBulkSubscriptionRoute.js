@@ -8,10 +8,13 @@ const {
   revokeCode,
   getBulkStats,
   createAdminPortalSession,
+  createAdminSubscription,
 } = require("../Controller/adminBulkSubscriptionController");
 
 // All routes require authentication and admin/manager role
 router.post("/create-checkout-session", auth.authenticate, auth.isManagerOrAdmin, createBulkCheckoutSession);
+router.post("/generate-admin", auth.authenticate, auth.isManagerOrAdmin, createAdminSubscription);
+
 router.get("/purchases", auth.authenticate, auth.isManagerOrAdmin, getBulkPurchases);
 router.get("/purchases/:purchaseId/codes", auth.authenticate, auth.isManagerOrAdmin, getBulkPurchaseCodes);
 router.post("/codes/:codeId/revoke", auth.authenticate, auth.isManagerOrAdmin, revokeCode);
