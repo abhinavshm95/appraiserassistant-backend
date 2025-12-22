@@ -11,14 +11,15 @@ const fs = require("fs");
 const http = require("http");
 const sharp = require("sharp");
 const sequelize = require("../connect/postgresqlConnnection.js");
-const { PAGINATION, SEARCH, PDF, API_KEYS, MANUFACTURERS, DEFAULT_CAR_VALUES } = require('../constants/config');
+const SearchLog = require("../model/SearchLog"); // Import SearchLog
+const { PAGINATION, SEARCH, PDF, API_KEYS, MANUFACTURERS, DEFAULT_CAR_VALUES } = require("../constants/config");
 
 const PDF2 = {
   MARGIN: 40,
   FONT_SIZES: {
     TITLE: 22,
-    BODY: 12
-  }
+    BODY: 12,
+  },
 };
 
 const CARD_WIDTH = 180;
@@ -26,7 +27,6 @@ const CARD_HEIGHT = 280;
 const IMAGE_HEIGHT = 100;
 const GAP = 20;
 const CARDS_PER_ROW = 3;
-
 
 // async function getLatLonByPostalCode(postalCode) {
 //   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(postalCode)}`;
@@ -69,24 +69,28 @@ const carMarketValue = async (req, res, next) => {
       },
     };
     const response = await axios(options);
-    const [matchedMake] = await sequelize.query(`
+    const [matchedMake] = await sequelize.query(
+      `
           SELECT * FROM manufacturers WHERE name ILIKE :searchTerm LIMIT 1`,
       {
         replacements: {
-          searchTerm: `%${response.data?.data?.basic?.make}%`
+          searchTerm: `%${response.data?.data?.basic?.make}%`,
         },
-      });
+      },
+    );
     if (matchedMake.length) {
-      const [matchedModels] = await sequelize.query(`
+      const [matchedModels] = await sequelize.query(
+        `
             SELECT name FROM models WHERE manufacturer_id = :searchTerm`,
         {
           replacements: {
-            searchTerm: matchedMake[0].id
+            searchTerm: matchedMake[0].id,
           },
-        });
+        },
+      );
       const match = findMatchingModel(response.data?.data?.basic?.model, matchedModels);
       if (match) {
-        response.data.data.basic.model = match.name
+        response.data.data.basic.model = match.name;
       }
     }
     return res.status(200).json({
@@ -108,7 +112,7 @@ const carinfoByVin = async (req, res, next) => {
       method: "GET",
       url: `https://auto.dev/api/vin/${vin}?`,
       headers: {
-        "Authorization": `Bearer ${API_KEYS.AUTO_DEV}`
+        Authorization: `Bearer ${API_KEYS.AUTO_DEV}`,
       },
     };
     const listing = await axios(options);
@@ -125,7 +129,7 @@ const carinfoByVin = async (req, res, next) => {
 const carListing = async (req, res, next) => {
   try {
     let baseUrl = `https://auto.dev/api/listings`;
-    let queryParams = { sort_filter: 'price:desc' };
+    let queryParams = { sort_filter: "price:desc" };
 
     queryParams.apiKey = API_KEYS.AUTO_DEV;
     queryParams.apiKey += "=";
@@ -137,9 +141,21 @@ const carListing = async (req, res, next) => {
       queryParams.year_max = req.query.year_max;
     }
     if (req.query.trim) {
-      queryParams.trim = req.query.trim
+      queryParams.trim = req.query.trim; // Fixed missing semicolon
+      // Log the search
+      try {
+        if (req.user) {
+          await SearchLog.create({
+            userId: req.user._id,
+            query: req.query,
+            endpoint: "/car-listing",
+          });
+        }
+      } catch (logError) {
+        console.error("Failed to log search query:", logError);
+      }
       // const [matched] = await sequelize.query(`
-      //     SELECT 
+      //     SELECT
       //       title,
       //       regexp_matches(title, :regexPattern, 'i') AS matched_words
       //     FROM cars
@@ -153,7 +169,7 @@ const carListing = async (req, res, next) => {
       //       regexPattern: req.query.trim,
       //     },
       //   });
-        
+
       // if (matched.length) {
       //   queryParams.trim = matched[0]?.matched_words[0] || req.query.trim
       // }
@@ -168,7 +184,7 @@ const carListing = async (req, res, next) => {
       // }
     }
     if (req.query.mileage) {
-      queryParams.mileage = req.query.mileage
+      queryParams.mileage = req.query.mileage;
     }
 
     if (req.query.model) {
@@ -178,7 +194,7 @@ const carListing = async (req, res, next) => {
     }
 
     if (req.query.make) {
-      queryParams.make = req.query.make
+      queryParams.make = req.query.make;
     }
     if (req.query.zip) {
       queryParams.zip = req.query.zip;
@@ -189,7 +205,7 @@ const carListing = async (req, res, next) => {
     if (req.query.price_max) {
       queryParams.price_max = req.query.price_max;
     }
-    
+
     if (req.query.price_min) {
       queryParams.price_min = req.query.price_min;
     }
@@ -216,19 +232,19 @@ const carListing = async (req, res, next) => {
       url: urlString,
     };
 
-    const response = await axios(options)
+    const response = await axios(options);
     if (response.data?.records?.length > 0) {
-      const originalTotalCount = response.data?.totalCount
-      const totalCountFormattedCount = response.data?.totalCountFormatted
-      const originalRecordCount = response.data?.hitsCount
+      const originalTotalCount = response.data?.totalCount;
+      const totalCountFormattedCount = response.data?.totalCountFormatted;
+      const originalRecordCount = response.data?.hitsCount;
       response.data.records = response.data.records.filter((record) => {
-        return isPrice(record.price)
-      })
-      response.data.hitsCount = response.data.records.length
-      if(originalRecordCount !== response.data.hitsCount){
-        const noOfRecordRemoved = (originalRecordCount - response.data.hitsCount)
-        response.data.totalCountFormatted = totalCountFormattedCount - noOfRecordRemoved
-        response.data.totalCount = originalTotalCount - noOfRecordRemoved
+        return isPrice(record.price);
+      });
+      response.data.hitsCount = response.data.records.length;
+      if (originalRecordCount !== response.data.hitsCount) {
+        const noOfRecordRemoved = originalRecordCount - response.data.hitsCount;
+        response.data.totalCountFormatted = totalCountFormattedCount - noOfRecordRemoved;
+        response.data.totalCount = originalTotalCount - noOfRecordRemoved;
       }
     }
     return res.status(200).json({
@@ -294,7 +310,7 @@ const getLatLonByPostalCode = async (postal_code) => {
     const url = `https://nominatim.openstreetmap.org/search?postalcode=${formatted}&country=USA&format=json&limit=1`;
 
     const response = await axios.get(url, {
-      headers: { "User-Agent": 'AppraiserAssistant/1.0 (support@appraiser-assistant.com)' },
+      headers: { "User-Agent": "AppraiserAssistant/1.0 (support@appraiser-assistant.com)" },
     });
 
     if (response.data.length > 0) {
@@ -407,19 +423,19 @@ const getLatLonByPostalCode = async (postal_code) => {
 //       : "";
 
 //     const query = `
-//       SELECT 
-//         car.id AS car_id, car.vin, car.year, car.title, 
+//       SELECT
+//         car.id AS car_id, car.vin, car.year, car.title,
 //         car.manufacturer_id, car.model_id, car.generation_id,
-//         car.body_type, car.color, car.engine_id, car.transmission, 
-//         car.drive_wheel, car.vehicle_type, car.fuel, car.cylinders, 
-//         car.views, car.sitemap_id, car.created_at, car.updated_at, 
-//         car.download_specs_at, car.processed_specs_at, car.has_images, 
-//         car.has_bid,car.has_buy_now, car.is_hidden, car.is_archived, 
+//         car.body_type, car.color, car.engine_id, car.transmission,
+//         car.drive_wheel, car.vehicle_type, car.fuel, car.cylinders,
+//         car.views, car.sitemap_id, car.created_at, car.updated_at,
+//         car.download_specs_at, car.processed_specs_at, car.has_images,
+//         car.has_bid,car.has_buy_now, car.is_hidden, car.is_archived,
 //         car.engine_volume,
-//         man.name AS manufacturer, model.name AS model, 
-//         lot.id AS lot_id, lot.buy_now_price, lot.estimate_repair_price, lot.sale_date, lot.actual_cash_value, lot.bid, lot.final_bid_updated_at,lot.odometer_mi AS mileage, 
-//         lot.latitude, lot.longitude, lot.seller_id, 
-//         location.name AS location, 
+//         man.name AS manufacturer, model.name AS model,
+//         lot.id AS lot_id, lot.buy_now_price, lot.estimate_repair_price, lot.sale_date, lot.actual_cash_value, lot.bid, lot.final_bid_updated_at,lot.odometer_mi AS mileage,
+//         lot.latitude, lot.longitude, lot.seller_id,
+//         location.name AS location,
 //         city.name AS city, state.name AS state, lot.postal_code,
 //         seller.name AS seller_name,
 //         eng.id AS engine_id, eng.name AS eng_name,
@@ -485,8 +501,23 @@ const salvageCarListbyPost = async (req, res) => {
       longitude,
       radius,
       title,
-      trim
+      trim,
     } = req.query;
+
+    // Log the search for salvage queries
+    try {
+      // We log even if not authenticated if we want general metrics, but requirements said "users".
+      // We'll log if req.user is present.
+      if (req.user) {
+        await SearchLog.create({
+          userId: req.user._id,
+          query: req.query,
+          endpoint: "/salvage-listing",
+        });
+      }
+    } catch (logError) {
+      console.error("Failed to log salvage search query:", logError);
+    }
 
     let whereClauses = [];
     let replacements = { limit, offset };
@@ -540,7 +571,7 @@ const salvageCarListbyPost = async (req, res) => {
       whereClauses.push("lot.bid >= :price_min");
       replacements.price_min = Number(price_min);
     }
-    console.log('price_max', price_max)
+    console.log("price_max", price_max);
     if (price_max) {
       whereClauses.push("lot.bid <= :price_max");
       replacements.price_max = Number(price_max);
@@ -552,9 +583,7 @@ const salvageCarListbyPost = async (req, res) => {
         latitude = coordinates.lat;
         longitude = coordinates.lon;
       } else {
-        return res
-          .status(400)
-          .json({ error: "Invalid postal_code, no coordinates found" });
+        return res.status(400).json({ error: "Invalid postal_code, no coordinates found" });
       }
     }
 
@@ -579,9 +608,7 @@ const salvageCarListbyPost = async (req, res) => {
       `);
     }
 
-    const whereQuery = whereClauses.length
-      ? `WHERE ${whereClauses.join(" AND ")}`
-      : "";
+    const whereQuery = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
     const query = `
       SELECT 
@@ -742,8 +769,7 @@ const marketingValueCarListbypostforradius = async (req, res) => {
       replacements.radius = radiusInKm;
     }
 
-    const whereQuery =
-      whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    const whereQuery = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
     const orderBy = hasCoordinates ? "distance" : "car.id";
 
@@ -801,8 +827,7 @@ LIMIT :limit OFFSET :offset;
 
 const carFilteraton = async (req, res, next) => {
   try {
-    const { year_min, make, model, city, state, exterior_color, page } =
-      req.body;
+    const { year_min, make, model, city, state, exterior_color, page } = req.body;
     const api = `https://auto.dev/api/listings?apikey=${API_KEYS.AUTO_DEV}&year_min=${year_min}&make=${make}&model=${model}&trim[]=Base&trim[]=SH-AWD&city=${city}&state=${state}&page=${page}`;
     let options = {
       method: "GET",
@@ -956,23 +981,18 @@ const marketValue = async (req, res, next) => {
   try {
     const { vin, state, mileage } = req.params;
 
-    const response = await axios.get(
-      `https://api.vehicledatabases.com/market-value/v2/${vin}`,
-      {
-        params: {
-          state: state,
-          mileage: mileage,
-        },
-        headers: {
-          "x-AuthKey": API_KEYS.VEHICLE_DB,
-        },
-      }
-    );
+    const response = await axios.get(`https://api.vehicledatabases.com/market-value/v2/${vin}`, {
+      params: {
+        state: state,
+        mileage: mileage,
+      },
+      headers: {
+        "x-AuthKey": API_KEYS.VEHICLE_DB,
+      },
+    });
     return res.json(response.data);
   } catch (error) {
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching the market value." });
+    res.status(500).json({ error: "An error occurred while fetching the market value." });
   }
 };
 
@@ -1044,25 +1064,24 @@ const generateReport = async (req, res, next) => {
               <th>Private Party</th>
               <th>Dealer Retail</th>
             </tr>
-            ${Array.isArray(data.market_value.market_value_data) &&
-        data.market_value.market_value_data[0] &&
-        Array.isArray(
-          data.market_value.market_value_data[0]["market value"]
-        )
-        ? data.market_value.market_value_data[0]["market value"]
-          .map(
-            (mv) => `
+            ${
+              Array.isArray(data.market_value.market_value_data) &&
+              data.market_value.market_value_data[0] &&
+              Array.isArray(data.market_value.market_value_data[0]["market value"])
+                ? data.market_value.market_value_data[0]["market value"]
+                    .map(
+                      (mv) => `
                 <00000000000tr>
                   <td>${mv.Condition}</td>
                   <td>${mv["Trade-In"]}</td>
                   <td>${mv["Private Party"]}</td>
                   <td>${mv["Dealer Retail"]}</td>
                 </tr>
-              `
-          )
-          .join("")
-        : '<tr><td colspan="4">No market value data available</td></tr>'
-      }
+              `,
+                    )
+                    .join("")
+                : '<tr><td colspan="4">No market value data available</td></tr>'
+            }
           </table>
         </div>
 
@@ -1081,8 +1100,7 @@ const generateReport = async (req, res, next) => {
           <div class="section-title">Transmission</div>
           <table>
             <tr><th>Type</th><td>${data.transmission.transmissionType}</td></tr>
-            <tr><th>Number of Speeds</th><td>${data.transmission.numberOfSpeeds
-      }</td></tr>
+            <tr><th>Number of Speeds</th><td>${data.transmission.numberOfSpeeds}</td></tr>
           </table>
         </div>
 
@@ -1106,10 +1124,7 @@ const generateReport = async (req, res, next) => {
     await browser.close();
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="vehicle_report.pdf"'
-    );
+    res.setHeader("Content-Disposition", 'attachment; filename="vehicle_report.pdf"');
     res.setHeader("Content-Length", buffer.length);
 
     res.send(buffer);
@@ -1286,11 +1301,7 @@ const generateFreetrialPdf = async (req, res, next) => {
     bufferStream.pipe(res);
 
     // ------- Report Title -------
-    doc
-      .fontSize(PDF.FONT_SIZES.TITLE)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Car Report", { align: "center" });
+    doc.fontSize(PDF.FONT_SIZES.TITLE).font("Helvetica-Bold").fillColor("#000").text("Car Report", { align: "center" });
     doc.moveDown(1.5);
 
     // ------- Information Section -------
@@ -1347,10 +1358,7 @@ const generateFreetrialPdf = async (req, res, next) => {
         .fontSize(16)
         .font("Helvetica-Bold")
         .fillColor("#000")
-        .text(
-          `${car.carDetail.year} ${car.carDetail.make} ${car.carDetail.model}`,
-          { underline: true }
-        );
+        .text(`${car.carDetail.year} ${car.carDetail.make} ${car.carDetail.model}`, { underline: true });
       doc.moveDown(0.5);
 
       const listing = [
@@ -1386,24 +1394,19 @@ const generateFreetrialPdf = async (req, res, next) => {
 
       // ------- Address -------
       doc.moveDown(0.5);
-      doc
-        .fontSize(12)
-        .font("Helvetica-Bold")
-        .fillColor("#000")
-        .text("ADDRESS", doc.page.margins.left, doc.y, {
-          width: 200,
-          align: "left",
-        });
+      doc.fontSize(12).font("Helvetica-Bold").fillColor("#000").text("ADDRESS", doc.page.margins.left, doc.y, {
+        width: 200,
+        align: "left",
+      });
 
       doc
         .font("Helvetica")
         .fillColor("#444")
         .text(
-          `${car.carDetail.dealerName || ""}, ${car.carDetail.city || ""}, ${car.carDetail.state || ""
-          }`,
+          `${car.carDetail.dealerName || ""}, ${car.carDetail.city || ""}, ${car.carDetail.state || ""}`,
           doc.page.width - doc.page.margins.right - 200,
           doc.y,
-          { width: 200, align: "right" }
+          { width: 200, align: "right" },
         );
 
       doc.moveDown(1);
@@ -1510,7 +1513,7 @@ const generateSalvagePdf = async (req, res, next) => {
       ${data
         .map((car) => {
           const roughCondition = car.marketValues?.["market value"]?.find(
-            (condition) => condition.Condition === "Rough"
+            (condition) => condition.Condition === "Rough",
           );
           let auctionPriceArray = [];
           let displayPrice;
@@ -1520,37 +1523,26 @@ const generateSalvagePdf = async (req, res, next) => {
               const priceString = item.data?.price || "0";
               return parseFloat(priceString.replace(/[$,]/g, ""));
             });
-          } else if (
-            typeof car.auctionData === "object" &&
-            car.auctionData.data
-          ) {
+          } else if (typeof car.auctionData === "object" && car.auctionData.data) {
             auctionPriceArray = car.auctionData.data.map((item) => {
               const priceString = item.price || "0";
               return parseFloat(priceString.replace(/[$,]/g, ""));
             });
           }
-          const validAuctionPrices = auctionPriceArray.filter(
-            (price) => !isNaN(price) && price > 0
-          );
+          const validAuctionPrices = auctionPriceArray.filter((price) => !isNaN(price) && price > 0);
 
           if (validAuctionPrices.length > 0) {
             displayPrice = Math.max(...validAuctionPrices).toFixed(2);
           } else {
-            const privatePartyValue =
-              parseFloat(roughCondition?.["Trade-In"].replace(/[$,]/g, "")) ||
-              0;
-            displayPrice = (
-              privatePartyValue -
-              privatePartyValue * 0.83
-            ).toFixed(2);
+            const privatePartyValue = parseFloat(roughCondition?.["Trade-In"].replace(/[$,]/g, "")) || 0;
+            displayPrice = (privatePartyValue - privatePartyValue * 0.83).toFixed(2);
           }
 
           return `
           <div class="listing">
             <h2>${car.heading || "N/A"}</h2>
             <div class="car-images">
-              <img src="${car.media?.photo_links?.[0] || "https://via.placeholder.com/150"
-            }" alt="Car Image" />
+              <img src="${car.media?.photo_links?.[0] || "https://via.placeholder.com/150"}" alt="Car Image" />
             </div>
             <div class="info">
               <label>VIN:</label> <span>${car.vin || "N/A"}</span>
@@ -1571,35 +1563,28 @@ const generateSalvagePdf = async (req, res, next) => {
               <label>Miles:</label> <span>${car.miles || "N/A"}</span>
             </div>
             <div class="info">
-              <label>Exterior Color:</label> <span>${car.exterior_color || "N/A"
-            }</span>
+              <label>Exterior Color:</label> <span>${car.exterior_color || "N/A"}</span>
             </div>
             <div class="info">
               <label>Title Type:</label> <span>${car.title_type || "N/A"}</span>
             </div>
             <div class="info">
-              <label>Fuel Type:</label> <span>${car.build?.fuel_type || "N/A"
-            }</span>
+              <label>Fuel Type:</label> <span>${car.build?.fuel_type || "N/A"}</span>
             </div>
             <div class="info">
-                <label>Engine:</label> <span>${car.build?.engine || "N/A"
-            }</span>
+                <label>Engine:</label> <span>${car.build?.engine || "N/A"}</span>
             </div>
             <div class="info">
-              <label>Transmission:</label> <span>${car.build?.transmission || "N/A"
-            }</span>
+              <label>Transmission:</label> <span>${car.build?.transmission || "N/A"}</span>
             </div>
             <div class="info">
-              <label>Drivetrain:</label> <span>${car.build?.drivetrain || "N/A"
-            }</span>
+              <label>Drivetrain:</label> <span>${car.build?.drivetrain || "N/A"}</span>
             </div>
             <div class="info">
-              <label>Highway MPG:</label> <span>${car.build?.highway_mpg || "N/A"
-            }</span>
+              <label>Highway MPG:</label> <span>${car.build?.highway_mpg || "N/A"}</span>
             </div>
             <div class="info">
-              <label>City MPG:</label> <span>${car.build?.city_mpg || "N/A"
-            }</span>
+              <label>City MPG:</label> <span>${car.build?.city_mpg || "N/A"}</span>
             </div>
             
             <div class="info">
@@ -1611,8 +1596,9 @@ const generateSalvagePdf = async (req, res, next) => {
               <h2>Dealer Information</h2>
               <p><strong>Name:</strong> ${car.dealer.name || "N/A"}</p>
               <p><strong>Website:</strong> ${car.dealer.website || "N/A"}</p>
-              <p><strong>Location:</strong>${car.dealer.street || "N/A"}, ${car.dealer.city || "N/A"
-            }, ${car.dealer.state || "N/A"}, ${car.dealer.country || "N/A"}</p>
+              <p><strong>Location:</strong>${car.dealer.street || "N/A"}, ${car.dealer.city || "N/A"}, ${
+            car.dealer.state || "N/A"
+          }, ${car.dealer.country || "N/A"}</p>
               <p><strong>Phone:</strong> ${car.dealer.phone || "N/A"}</p>
               <p><strong>Zip:</strong> ${car.dealer.zip || "N/A"}</p>
           </div>
@@ -1665,8 +1651,7 @@ const homePageApi = async (req, res, next) => {
     }
 
     if (req.body.model && req.body.model !== "") {
-      const capitalizedModel =
-        req.body.model.charAt(0).toUpperCase() + req.body.model.slice(1);
+      const capitalizedModel = req.body.model.charAt(0).toUpperCase() + req.body.model.slice(1);
       baseUrl += `&model=${capitalizedModel}`;
     }
 
@@ -1697,14 +1682,11 @@ const homePageApi = async (req, res, next) => {
     if (req.body.make && req.body.make !== "") {
       const makeLength = req.body.make.split(" ");
       if (makeLength.length > 1) {
-        let make =
-          makeLength[0].charAt(0).toUpperCase() + makeLength[0].slice(1);
-        let model =
-          makeLength[1].charAt(0).toUpperCase() + makeLength[1].slice(1);
+        let make = makeLength[0].charAt(0).toUpperCase() + makeLength[0].slice(1);
+        let model = makeLength[1].charAt(0).toUpperCase() + makeLength[1].slice(1);
         baseUrl += `&make=${make}&model=${model}`;
       } else {
-        const capitalizedMake =
-          req.body.make.charAt(0).toUpperCase() + req.body.make.slice(1);
+        const capitalizedMake = req.body.make.charAt(0).toUpperCase() + req.body.make.slice(1);
         baseUrl += `&make=${capitalizedMake}`;
       }
     }
@@ -1731,7 +1713,7 @@ const homePageApi = async (req, res, next) => {
 const getSalvageCarList = async (req, res) => {
   try {
     const response = await axios.get(
-      "https://mc-api.marketcheck.com/v2/search/car/auction/active?api_key=PO1xvctFD5uLcQcK6TD3lOtQWXe18ZM9&title_type=salvage&rows=50"
+      "https://mc-api.marketcheck.com/v2/search/car/auction/active?api_key=PO1xvctFD5uLcQcK6TD3lOtQWXe18ZM9&title_type=salvage&rows=50",
     );
 
     const car = new Car(response.data);
@@ -1742,9 +1724,7 @@ const getSalvageCarList = async (req, res) => {
       result: response.data,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error fetching and saving car list" });
+    return res.status(500).json({ message: "Error fetching and saving car list" });
   }
 };
 
@@ -1752,10 +1732,8 @@ const getSalvageCar = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || PAGINATION.DEFAULT_PAGE_NUMBER;
     const limit = parseInt(req.query.limit, 10) || PAGINATION.DEFAULT_PAGE_SIZE;
-    if (page < 1)
-      return res.status(400).json({ message: "Page must be greater than 0" });
-    if (limit < 1)
-      return res.status(400).json({ message: "Limit must be greater than 0" });
+    if (page < 1) return res.status(400).json({ message: "Page must be greater than 0" });
+    if (limit < 1) return res.status(400).json({ message: "Limit must be greater than 0" });
 
     const skip = (page - 1) * limit;
 
@@ -1811,9 +1789,7 @@ const searchSalvageCar = async (req, res) => {
     const cars = await Car.find(query);
 
     if (cars.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No cars found for the provided parameters" });
+      return res.status(404).json({ message: "No cars found for the provided parameters" });
     }
 
     const matchedCars = cars.map((car) => {
@@ -1838,9 +1814,7 @@ const searchSalvageCar = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    return res
-      .status(500)
-      .json({ message: "An error occurred while searching for cars" });
+    return res.status(500).json({ message: "An error occurred while searching for cars" });
   }
 };
 
@@ -1871,14 +1845,11 @@ const fetchCarStats = async (req, res) => {
 
 async function getBasePriceForEstimateBid(req, res, next) {
   try {
-    const response = await axios.get(
-      `https://auto.dev/api/vin/${req.params.vin}`,
-      {
-        headers: {
-          apikey: "ZrQEPSkKd2VidGVzdDE5MkBnbWFpbC5jb20=",
-        },
-      }
-    );
+    const response = await axios.get(`https://auto.dev/api/vin/${req.params.vin}`, {
+      headers: {
+        apikey: "ZrQEPSkKd2VidGVzdDE5MkBnbWFpbC5jb20=",
+      },
+    });
     res.json(response.data);
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -1972,8 +1943,7 @@ const finalSalvageReport = async (req, res, next) => {
         })
         .forEach((key) => {
           const label = key.replace(/_/g, " ").toUpperCase();
-          const value =
-            key === "sale_date" ? car[key]?.split("T")[0] : car[key] || "N/A";
+          const value = key === "sale_date" ? car[key]?.split("T")[0] : car[key] || "N/A";
 
           const leftX = doc.page.margins.left;
           const rightX = doc.page.width - doc.page.margins.right - 200;
@@ -1986,11 +1956,7 @@ const finalSalvageReport = async (req, res, next) => {
             .fillColor("#000")
             .text(label, leftX, y, { width: 200, align: "left" });
 
-          doc
-            .fontSize(12)
-            .font("Helvetica")
-            .fillColor("#444")
-            .text(value, rightX, y, { width: 200, align: "right" });
+          doc.fontSize(12).font("Helvetica").fillColor("#444").text(value, rightX, y, { width: 200, align: "right" });
 
           doc.moveDown(0.5);
         });
@@ -2009,11 +1975,10 @@ const finalSalvageReport = async (req, res, next) => {
         .font("Helvetica")
         .fillColor("#444")
         .text(
-          `${car.location || ""}, ${car.city || ""}, ${car.state || ""}, ${car.postal_code || ""
-          }`,
+          `${car.location || ""}, ${car.city || ""}, ${car.state || ""}, ${car.postal_code || ""}`,
           doc.page.width - doc.page.margins.right - 200,
           doc.y,
-          { width: 200, align: "right" }
+          { width: 200, align: "right" },
         );
 
       doc.moveDown(1);
@@ -2025,17 +1990,11 @@ const finalSalvageReport = async (req, res, next) => {
   }
 };
 
-
-
 const finalSalvageReportSinglePdf = async (req, res, next) => {
   try {
     const { market_value, salvage_value } = req.body;
 
-    if (
-      !market_value ||
-      !Array.isArray(market_value.selected_car) ||
-      !Array.isArray(salvage_value)
-    ) {
+    if (!market_value || !Array.isArray(market_value.selected_car) || !Array.isArray(salvage_value)) {
       return res.status(400).json({
         error: "Invalid data format. Check structure of market_value and salvage_value.",
       });
@@ -2053,19 +2012,11 @@ const finalSalvageReportSinglePdf = async (req, res, next) => {
     bufferStream.pipe(res);
 
     // --------- Report Title ---------
-    doc
-      .fontSize(PDF.FONT_SIZES.TITLE)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Car Report", { align: "center" });
+    doc.fontSize(PDF.FONT_SIZES.TITLE).font("Helvetica-Bold").fillColor("#000").text("Car Report", { align: "center" });
     doc.moveDown(2);
 
     // --------- MARKET VALUE SECTION ---------
-    doc
-      .fontSize(18)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Market Value", { underline: true });
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#000").text("Market Value", { underline: true });
     doc.moveDown(1);
 
     // Market value summary
@@ -2099,11 +2050,7 @@ const finalSalvageReportSinglePdf = async (req, res, next) => {
 
     // --------- SALVAGE VALUE SECTION ---------
     doc.addPage();
-    doc
-      .fontSize(18)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Salvage Value", { underline: true });
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#000").text("Salvage Value", { underline: true });
     doc.moveDown(1);
 
     salvage_value.forEach((car, index) => {
@@ -2176,17 +2123,9 @@ function renderCarDetails(doc, car) {
       const rightX = doc.page.width - doc.page.margins.right - 200;
       const y = doc.y;
 
-      doc
-        .fontSize(12)
-        .font("Helvetica-Bold")
-        .fillColor("#000")
-        .text(label, leftX, y, { width: 200, align: "left" });
+      doc.fontSize(12).font("Helvetica-Bold").fillColor("#000").text(label, leftX, y, { width: 200, align: "left" });
 
-      doc
-        .fontSize(12)
-        .font("Helvetica")
-        .fillColor("#444")
-        .text(value, rightX, y, { width: 200, align: "right" });
+      doc.fontSize(12).font("Helvetica").fillColor("#444").text(value, rightX, y, { width: 200, align: "right" });
 
       doc.moveDown(0.5);
     });
@@ -2206,13 +2145,12 @@ function renderCarDetails(doc, car) {
       `${car.location || ""}, ${car.city || ""}, ${car.state || ""}, ${car.postal_code || ""}`,
       doc.page.width - doc.page.margins.right - 200,
       doc.y,
-      { width: 200, align: "right" }
+      { width: 200, align: "right" },
     );
 
   doc.moveDown(1);
 }
 //working code end--------------
-
 
 const finalSalvageReportNewVersion = async (req, res, next) => {
   try {
@@ -2241,19 +2179,11 @@ const finalSalvageReportNewVersion = async (req, res, next) => {
     bufferStream.pipe(res);
 
     // --------- Report Title ---------
-    doc
-      .fontSize(PDF.FONT_SIZES.TITLE)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Car Report", { align: "center" });
+    doc.fontSize(PDF.FONT_SIZES.TITLE).font("Helvetica-Bold").fillColor("#000").text("Car Report", { align: "center" });
     doc.moveDown(2);
 
     // --------- MARKET VALUE SECTION ---------
-    doc
-      .fontSize(18)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Market Value", { underline: true });
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#000").text("Market Value", { underline: true });
     doc.moveDown(1);
     const marketSummary = marketvalue.marketvalue || {};
     const marketInfoTable = [
@@ -2299,20 +2229,16 @@ const finalSalvageReportNewVersion = async (req, res, next) => {
         .fontSize(16)
         .font("Helvetica-Bold")
         .fillColor("#000")
-        .text(
-          `${car.carDetail.year || ""} ${car.carDetail.make || ""} ${car.carDetail.model || ""
-          }`,
-          { underline: true }
-        );
+        .text(`${car.carDetail.year || ""} ${car.carDetail.make || ""} ${car.carDetail.model || ""}`, {
+          underline: true,
+        });
       doc.moveDown(0.5);
       const detail = car.carDetail || {};
       const tracking = detail.trackingParams || {};
       const city = detail.city || "";
       const state = detail.state || "";
       const zip = detail.zip || "";
-      const address =
-        detail.address ||
-        [tracking.dealerName, city, state, zip].filter(Boolean).join(", ");
+      const address = detail.address || [tracking.dealerName, city, state, zip].filter(Boolean).join(", ");
       const listing = [
         ["VIN", detail.vin],
         ["Year", detail.year],
@@ -2346,11 +2272,7 @@ const finalSalvageReportNewVersion = async (req, res, next) => {
 
     // --------- SALVAGE VALUE SECTION ---------
     doc.addPage();
-    doc
-      .fontSize(18)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Salvage Value", { underline: true });
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#000").text("Salvage Value", { underline: true });
     doc.moveDown(1);
 
     for (let index = 0; index < salvage_value.salvageCars.length; index++) {
@@ -2414,10 +2336,10 @@ const checkZipCode = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-}
+};
 
 const getMakes = async (req, res) => {
-  const searchTerm = req.query.search || '';
+  const searchTerm = req.query.search || "";
 
   try {
     const query = `SELECT 
@@ -2427,49 +2349,48 @@ const getMakes = async (req, res) => {
           ELSE 'AllMakes' 
           END AS category
           FROM manufacturers
-          WHERE name ILIKE :searchTerm order by name asc`
-    const [makes, metadata] = await sequelize.query(
-      query, {
+          WHERE name ILIKE :searchTerm order by name asc`;
+    const [makes, metadata] = await sequelize.query(query, {
       replacements: { searchTerm: `%${searchTerm}%` },
     });
     res.status(200).json(makes);
   } catch (error) {
-    console.error('Error fetching makes:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching makes:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-}
+};
 
 const getModels = async (req, res) => {
   const { makeId } = req.params;
-  const searchTerm = req.query.search || '';
+  const searchTerm = req.query.search || "";
 
   try {
     const [models, metadata] = await sequelize.query(
-      'SELECT id, name FROM models WHERE manufacturer_id = :makeId AND name ILIKE :searchTerm AND vehicle_type = 1 order by name asc', {
-      replacements: { makeId, searchTerm: `%${searchTerm}%` },
-    });
+      "SELECT id, name FROM models WHERE manufacturer_id = :makeId AND name ILIKE :searchTerm AND vehicle_type = 1 order by name asc",
+      {
+        replacements: { makeId, searchTerm: `%${searchTerm}%` },
+      },
+    );
 
     if (models.length === 0) {
-      return res.status(404).json({ message: 'No models found for this make' });
+      return res.status(404).json({ message: "No models found for this make" });
     }
 
     res.status(200).json(models);
   } catch (error) {
-    console.error('Error fetching models:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching models:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-}
+};
 const getDefaults = async (req, res) => {
   try {
-    console.log(DEFAULT_CAR_VALUES, "DEFAULT_CAR_VALUESDEFAULT_CAR_VALUES")
-    res.status(200).json({ DEFAULT_CAR_VALUES })
+    console.log(DEFAULT_CAR_VALUES, "DEFAULT_CAR_VALUESDEFAULT_CAR_VALUES");
+    res.status(200).json({ DEFAULT_CAR_VALUES });
   } catch (err) {
-    console.error('Error fetching models:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching models:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
-}
-
-
+};
 
 process.on("SIGINT", async () => {
   if (browser) await browser.close();
@@ -2507,18 +2428,17 @@ module.exports = {
   checkZipCode,
   getMakes,
   getModels,
-  getDefaults
+  getDefaults,
 };
 
 function normalize(str) {
-  return str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return str.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
 
 function findMatchingModel(input, models) {
   const normalizedInput = normalize(input);
-  return models.find(model => normalize(model.name) === normalizedInput);
+  return models.find((model) => normalize(model.name) === normalizedInput);
 }
-
 
 async function getBaseMsrp(vin) {
   try {
@@ -2529,13 +2449,11 @@ async function getBaseMsrp(vin) {
     });
 
     return response?.data?.price?.baseMsrp;
-
   } catch (error) {
-    console.error('VIN Lookup Error:', error.message);
+    console.error("VIN Lookup Error:", error.message);
     // res.status(500).json({ error: 'Failed to fetch VIN data' });
   }
 }
-
 
 async function finalSalvageReportNewVersion2(req, res, next) {
   try {
@@ -2570,8 +2488,8 @@ async function finalSalvageReportNewVersion2(req, res, next) {
     const leftX = doc.page.margins.left;
     const topY = doc.y;
     try {
-      const response = await axios.get(logoUrl, { responseType: 'arraybuffer' });
-      const logoBuffer = Buffer.from(response.data, 'binary');
+      const response = await axios.get(logoUrl, { responseType: "arraybuffer" });
+      const logoBuffer = Buffer.from(response.data, "binary");
 
       // Draw logo on the left
       doc.image(logoBuffer, leftX, topY, {
@@ -2590,25 +2508,17 @@ async function finalSalvageReportNewVersion2(req, res, next) {
         .font("Helvetica-Bold")
         .fontSize(16)
         .text("Assistant", leftX + logoWidth + 10, topY + 22);
-
     } catch (err) {
-      doc
-        .fontSize(12)
-        .fillColor("red")
-        .text("Logo failed to load", leftX, topY);
+      doc.fontSize(12).fillColor("red").text("Logo failed to load", leftX, topY);
     }
 
     // Right side text
     const rightX = doc.page.width - doc.page.margins.right - 200;
 
-    doc
-      .fontSize(12)
-      .font("Helvetica-Bold")
-      .fillColor("#000")
-      .text("Conditions Report", rightX, topY, {
-        width: 200,
-        align: "right",
-      });
+    doc.fontSize(12).font("Helvetica-Bold").fillColor("#000").text("Conditions Report", rightX, topY, {
+      width: 200,
+      align: "right",
+    });
 
     doc
       .font("Helvetica-Oblique")
@@ -2655,16 +2565,19 @@ async function finalSalvageReportNewVersion2(req, res, next) {
         width: 200,
         align: "left",
       });
-      doc.font("Helvetica").fillColor("#444").text(value || "N/A", rightX, y, {
-        width: 200,
-        align: "right",
-      });
+      doc
+        .font("Helvetica")
+        .fillColor("#444")
+        .text(value || "N/A", rightX, y, {
+          width: 200,
+          align: "right",
+        });
       doc.moveDown(0.5);
     });
 
-    doc.moveDown(9)
+    doc.moveDown(9);
 
-    professionalDisclosure(doc)
+    professionalDisclosure(doc);
 
     // --------- Selected Cars Grid ---------
     doc.addPage();
@@ -2681,9 +2594,9 @@ async function finalSalvageReportNewVersion2(req, res, next) {
         doc.addPage();
         startY = doc.y;
       }
-      if(marketvalue.selected_car.length > 3 && i == 3){
+      if (marketvalue.selected_car.length > 3 && i == 3) {
         doc.addPage();
-        y = 16
+        y = 16;
       }
       await renderCarCard(doc, marketvalue.selected_car[i], x, y, false);
     }
@@ -2707,11 +2620,11 @@ async function finalSalvageReportNewVersion2(req, res, next) {
         doc.addPage();
         startY = doc.y;
       }
-       if(salvage_value.salvageCars.length > 3 && i == 3){
+      if (salvage_value.salvageCars.length > 3 && i == 3) {
         doc.addPage();
         doc.fontSize(18).font("Helvetica-Bold").text("Salvage Value Bids", { align: "center" });
-        y = 16
-       }
+        y = 16;
+      }
       await renderCarCard(doc, salvage_value.salvageCars[i], x, y, true);
 
       if (salvage_value.salvageCars[i].bid == null) {
@@ -2735,15 +2648,14 @@ async function finalSalvageReportNewVersion2(req, res, next) {
       }
     }
     // if (salvage_value.salvageCars.length < 4) {
-      doc.moveDown(20)
-      // professionalDisclosure(doc)
+    doc.moveDown(20);
+    // professionalDisclosure(doc)
     // }
     doc.end();
   } catch (err) {
     next(err);
   }
-};
-
+}
 
 function professionalDisclosure(doc) {
   doc
@@ -2752,14 +2664,13 @@ function professionalDisclosure(doc) {
     .fillColor("#444")
     .text("Professional Disclosure", doc.page.margins.left, doc.y, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-      align: "left"
+      align: "left",
     });
 
   doc.moveDown(0.5); // Small space after heading
 
-  const disclosureText = `This report incorporates reference materials that utilize data from the Insurance Auto Auctions (IAA) and CoPart auction platforms. The information derived from these sources is intended for informational purposes only and should be verified independently by users.`
-  const disclosureText2 =
-    `While the data is derived from reputable sources, no guarantees are made regarding the accuracy, completeness, or timeliness of the information presented.`
+  const disclosureText = `This report incorporates reference materials that utilize data from the Insurance Auto Auctions (IAA) and CoPart auction platforms. The information derived from these sources is intended for informational purposes only and should be verified independently by users.`;
+  const disclosureText2 = `While the data is derived from reputable sources, no guarantees are made regarding the accuracy, completeness, or timeliness of the information presented.`;
   const disclosureText3 = `Users are encouraged to conduct their own due diligence and consult additional resources as necessary.`;
 
   doc
@@ -2769,7 +2680,7 @@ function professionalDisclosure(doc) {
     .text(disclosureText, doc.page.margins.left, doc.y, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
       align: "left",
-      lineGap: 4
+      lineGap: 4,
     });
 
   doc.moveDown(0.5);
@@ -2781,7 +2692,7 @@ function professionalDisclosure(doc) {
     .text(disclosureText2, doc.page.margins.left, doc.y, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
       align: "left",
-      lineGap: 4
+      lineGap: 4,
     });
 
   doc.moveDown(0.5);
@@ -2793,12 +2704,11 @@ function professionalDisclosure(doc) {
     .text(disclosureText3, doc.page.margins.left, doc.y, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
       align: "left",
-      lineGap: 4
+      lineGap: 4,
     });
 
   doc.moveDown(1);
 }
-
 
 function getCardX(index) {
   return PDF.MARGIN + (index % CARDS_PER_ROW) * (CARD_WIDTH + GAP);
@@ -2812,88 +2722,80 @@ function getCardY(startY, rowIndex) {
 
 async function renderCarCard(doc, car, x, y, isSalvage = false) {
   try {
-    const imgUrl = isSalvage
-      ? JSON.parse(car.images?.[0])?.[0]
-      : car.carDetail?.thumbnailUrlLarge;
+    const imgUrl = isSalvage ? JSON.parse(car.images?.[0])?.[0] : car.carDetail?.thumbnailUrlLarge;
 
     if (imgUrl) {
       const response = await axios.get(imgUrl, {
-        responseType: 'arraybuffer',
+        responseType: "arraybuffer",
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-          'Referer': 'https://cars.import-motor.com/',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-        }
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+          Referer: "https://cars.import-motor.com/",
+          "Accept-Encoding": "gzip, deflate, br",
+          Connection: "keep-alive",
+        },
       });
-      let buffer = Buffer.from(response.data, 'binary');
+      let buffer = Buffer.from(response.data, "binary");
 
-      if (isSalvage && imgUrl.endsWith('.webp')) {
+      if (isSalvage && imgUrl.endsWith(".webp")) {
         buffer = await sharp(buffer).jpeg().toBuffer();
       }
 
       doc.image(buffer, x, y, { fit: [CARD_WIDTH, IMAGE_HEIGHT] });
     } else {
-      doc.fontSize(10).fillColor('red').text('No Image', x, y);
+      doc.fontSize(10).fillColor("red").text("No Image", x, y);
     }
   } catch (err) {
-    doc.fontSize(10).fillColor('red').text('Image Error', x, y);
+    doc.fontSize(10).fillColor("red").text("Image Error", x, y);
   }
 
   const title = isSalvage
     ? car.title || `${car.year || ""} ${car.manufacturer || ""} ${car.model || ""}`
     : `${car.carDetail?.year || ""} ${car.carDetail?.make || ""} ${car.carDetail?.model || ""}`;
 
-  const bid = isSalvage
-    ? `Final Bid: $${car.bid ?? 'N/A'}`
-    : `Price: ${car.carDetail?.price ?? 'N/A'}`;
+  const bid = isSalvage ? `Final Bid: $${car.bid ?? "N/A"}` : `Price: ${car.carDetail?.price ?? "N/A"}`;
 
   const info = isSalvage
     ? [
-      ["VIN", car.vin?.toUpperCase()],
-      ["Year", car.year],
-      ["Make", car.manufacturer],
-      ["Model", car.model],
-      ["Mileage", car.mileage],
-      ["Dealer Name", car.seller_name],
-      ["Address", `${car.city || ""}, ${car.state || ""}`],
-      ["Source", car.domain_id == 1 ? "IAA" : car.domain_id == 3 ? "Copart" : "-" ]
-    ]
+        ["VIN", car.vin?.toUpperCase()],
+        ["Year", car.year],
+        ["Make", car.manufacturer],
+        ["Model", car.model],
+        ["Mileage", car.mileage],
+        ["Dealer Name", car.seller_name],
+        ["Address", `${car.city || ""}, ${car.state || ""}`],
+        ["Source", car.domain_id == 1 ? "IAA" : car.domain_id == 3 ? "Copart" : "-"],
+      ]
     : [
-      ["VIN", car.carDetail?.vin],
-      ["Year", car.carDetail?.year],
-      ["Make", car.carDetail?.make],
-      ["Model", car.carDetail?.model],
-      ["Trim", car.carDetail?.trim],
-      ["Mileage", car.carDetail?.mileage],
-      ["Dealer Name", car.carDetail?.trackingParams?.dealerName || car.carDetail?.dealerName],
-      ["Address", `${car.carDetail?.city || ""}, ${car.carDetail?.state || ""}`]
-    ];
+        ["VIN", car.carDetail?.vin],
+        ["Year", car.carDetail?.year],
+        ["Make", car.carDetail?.make],
+        ["Model", car.carDetail?.model],
+        ["Trim", car.carDetail?.trim],
+        ["Mileage", car.carDetail?.mileage],
+        ["Dealer Name", car.carDetail?.trackingParams?.dealerName || car.carDetail?.dealerName],
+        ["Address", `${car.carDetail?.city || ""}, ${car.carDetail?.state || ""}`],
+      ];
 
   dy = y + IMAGE_HEIGHT + 5;
-  doc
-    .fontSize(10)
-    .font("Helvetica-Bold")
-    .fillColor("#000");
+  doc.fontSize(10).font("Helvetica-Bold").fillColor("#000");
 
   const titleHeight = doc.heightOfString(title, {
     width: CARD_WIDTH,
-    align: 'left',
+    align: "left",
   });
 
   doc.text(title, x, dy, {
     width: CARD_WIDTH,
-    align: 'left',
+    align: "left",
     lineBreak: true,
   });
 
   dy += titleHeight + 5;
   doc.font("Helvetica").text(bid, x, dy, {
     width: CARD_WIDTH,
-    align: 'left',
+    align: "left",
   });
-
 
   // line break;
   dy += 20;

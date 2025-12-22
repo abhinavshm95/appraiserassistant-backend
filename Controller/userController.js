@@ -2,6 +2,7 @@ const Model = require("../model/index");
 const universalFunction = require("../universalFunction/universalFunction");
 const code = require("../statusCode/index");
 const message = require("../message/index");
+const { logAdminAction } = require("../Utils/adminLogger");
 
 const register = async (req, res, next) => {
   try {
@@ -306,6 +307,19 @@ const toggleUserActivation = async (req, res, next) => {
       );
     } else {
       await Model.user.updateOne({ _id: user._id }, { $set: { isActive: newStatus } });
+    }
+
+    // Log the action (fire and forget)
+    if (req.user) {
+      logAdminAction(
+        req.user._id,
+        newStatus ? "Activated User" : "Deactivated User",
+        {
+          targetUserId: user._id,
+          targetUserEmail: user.email,
+        },
+        req,
+      );
     }
 
     return universalFunction.successFunction(

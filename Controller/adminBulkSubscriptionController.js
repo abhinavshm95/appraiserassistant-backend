@@ -2,6 +2,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const Model = require("../model/index");
 const universalFunction = require("../universalFunction/universalFunction");
 const code = require("../statusCode/index");
+const { logAdminAction } = require("../Utils/adminLogger");
 
 /**
  * Get subscription duration in days based on price interval
@@ -201,6 +202,18 @@ const createAdminSubscription = async (req, res, next) => {
     }));
 
     await Model.bulkSubscriptionCode.insertMany(codeDocs);
+
+    // Log admin action
+    await logAdminAction(
+      admin._id,
+      "Created Subscription Keys",
+      {
+        quantity: quantity,
+        months: months,
+        purchaseId: purchase._id,
+      },
+      req,
+    );
 
     return universalFunction.successFunction(
       req,
