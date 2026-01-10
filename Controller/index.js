@@ -4,5 +4,7 @@ module.exports={
     authController:require("./authController"),
     stripeController:require("./stripeController"),
     stripeWebhookController:require("./stripeWebhookController"),
-    googleAuthController:require("./googleAuthController")
+    googleAuthController:require("./googleAuthController"),
+    adminStripeController:require("./adminStripeController"),
+    adminCouponController:require("./adminCouponController")
 }
