@@ -77,6 +77,13 @@ const createCoupon = async (req, res, next) => {
         // Create in Stripe
         const stripeCoupon = await stripe.coupons.create(couponPayload);
 
+        // Create Promotion Code (Customer facing code)
+        // This allows the coupon to be used in the "Add promotion code" field on Checkout
+        await stripe.promotionCodes.create({
+            coupon: stripeCoupon.id,
+            code: name, // Use the coupon name as the code (e.g. SUMMER20)
+        });
+
         // Save to DB
         const newCoupon = await Model.stripeCoupon.create({
             stripeCouponId: stripeCoupon.id,
