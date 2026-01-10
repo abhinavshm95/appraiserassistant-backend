@@ -59,8 +59,12 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/upload", express.static("upload"));
 app.use("/api", route);
+const adminStripeRoute = require("./Route/adminStripeRoute.js");
+const adminCouponRoute = require("./Route/adminCouponRoute.js");
 app.use("/api/admin/reports", adminReportsRoute);
 app.use("/api/admin/dashboard", adminDashboardRoute);
+app.use("/api/admin/stripe", adminStripeRoute);
+app.use("/api/admin/stripe", adminCouponRoute);
 app.get("/", (req, res) => res.json({ message: "Welcome to the Appraiser Assistant API." }));
 app.set("view engine", "ejs");
 app.set("views", path.resolve(__dirname, "./views"));
