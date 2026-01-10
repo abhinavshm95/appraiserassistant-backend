@@ -31,6 +31,25 @@ const createCheckoutSession = async (req, res, next) => {
       );
     }
 
+    // Prepare session options
+    const sessionOptions = {
+        customer: undefined, // Will set later
+        mode: "subscription",
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.FRONTEND_URL}/subscription/cancel`,
+        metadata: {
+          userId: user._id.toString(),
+        },
+        allow_promotion_codes: true, // Allow user to enter coupons on Stripe page
+    };
+
     // Check if user already has a subscription record
     let userSubscription = await Model.userSubscription.findOne({ userId: user._id });
     let stripeCustomerId;
@@ -61,23 +80,11 @@ const createCheckoutSession = async (req, res, next) => {
       }
     }
 
+    // Set customer in options
+    sessionOptions.customer = stripeCustomerId;
+
     // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeCustomerId,
-      mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      success_url: `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/subscription/cancel`,
-      metadata: {
-        userId: user._id.toString(),
-      },
-    });
+    const session = await stripe.checkout.sessions.create(sessionOptions);
 
     return universalFunction.successFunction(
       req,
