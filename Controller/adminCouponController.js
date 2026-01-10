@@ -34,7 +34,8 @@ const createCoupon = async (req, res, next) => {
             amountOff, 
             duration, 
             durationInMonths, 
-            appliesToProducts 
+            appliesToProducts,
+            appliesToPrices
         } = req.body;
 
         if (!name) {
@@ -86,6 +87,7 @@ const createCoupon = async (req, res, next) => {
             duration: stripeCoupon.duration,
             durationInMonths: stripeCoupon.duration_in_months,
             appliesToProducts: appliesToProducts || [],
+            appliesToPrices: appliesToPrices || [],
             active: stripeCoupon.valid,
             metadata: stripeCoupon.metadata
         });

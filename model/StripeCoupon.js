@@ -31,6 +31,10 @@ const stripeCouponSchema = new Mongoose.Schema({
         type: String,
         ref: 'StripeProduct'
     }],
+    appliesToPrices: [{
+        type: String,
+        ref: 'StripePrice'
+    }],
     active: {
         type: Boolean,
         default: true
