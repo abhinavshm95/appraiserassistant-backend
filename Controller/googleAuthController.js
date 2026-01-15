@@ -232,4 +232,5 @@ const googleAuthCallback = async (req, res, next) => {
 module.exports = {
 	googleAuth,
 	verifyGoogleToken,
+	googleAuthCallback,
 };
