@@ -20,34 +20,6 @@ const me = async (req, res, next) => {
 
 const refreshTokens = async (req, res, next) => {
 	try {
-		// The frontend might send refreshToken in body or cookie.
-		// Based on plan, we expect it in body for now as we didn't set up cookies explicitly in frontend yet (though axios has withCredentials=true).
-		// Let's support body for now as per common JWT patterns if not using httpOnly cookies strictly.
-		// Actually, the frontend code I saw earlier: `api.post('/auth/refresh-tokens')` - it didn't send data in body, so it might expect cookie?
-		// Wait, the frontend code `api.post('/auth/refresh-tokens')` had no body.
-		// If so, it MUST be in a cookie.
-		// However, I didn't see cookie setting logic in `userController.js` login/register.
-		// I just added `refreshToken` to the response body.
-		// So the frontend needs to send it.
-		// The frontend interceptor I wrote/saw: `api.post('/auth/refresh-tokens')`. It didn't pass data.
-		// This means the frontend implementation I saw earlier was incomplete or assumed cookies.
-		// Since I am implementing backend now, and I just added refreshToken to response body,
-		// I should probably update frontend to store it and send it, OR update backend to set cookie.
-		// Setting cookie is more secure.
-		// BUT, the user asked to "implement auth/me & auth/refresh-token api".
-		// I should probably stick to the simplest working solution first.
-		// If I change frontend to send body, I need to update frontend.
-		// If I change backend to set cookie, I need to update `userController` again.
-
-		// Let's check `userController` again. I just added `refreshToken` to the returned user object.
-		// So frontend receives it.
-		// The frontend `api-client.ts` calls `api.post('/auth/refresh-tokens')`.
-		// It does NOT pass the refresh token.
-		// So currently, it won't work unless it's in a cookie.
-
-		// I will assume for now that I should support receiving it in the body, AND I should update the frontend to send it.
-		// OR, I can check if `req.cookies` has it.
-
 		// Read from cookie
 		const refreshToken = req.cookies.refreshToken;
 
