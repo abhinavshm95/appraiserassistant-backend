@@ -2482,35 +2482,36 @@ async function finalSalvageReportNewVersion2(req, res, next) {
     bufferStream.pipe(res);
 
     // --------- Title ---------
-    const logoUrl = "https://carappraiser.appraiser-assistant.com/icon1.png"; // Replace with your image URL
-    const logoWidth = 80;
-    const logoHeight = 50;
+    // --------- Title ---------
     const leftX = doc.page.margins.left;
     const topY = doc.y;
-    try {
-      const response = await axios.get(logoUrl, { responseType: "arraybuffer" });
-      const logoBuffer = Buffer.from(response.data, "binary");
 
-      // Draw logo on the left
-      doc.image(logoBuffer, leftX, topY, {
-        width: logoWidth,
-        height: logoHeight,
-      });
+    // Gradient matching app's primary accent
+    const gradient = doc.linearGradient(leftX, topY, leftX + 100, topY);
+    gradient.stop(0, '#38bdf8')
+            .stop(0.5, '#22d3ee')
+            .stop(1, '#06b6d4');
 
-      // Text right next to the logo
-      doc
-        .fontSize(16)
-        .font("Helvetica-Bold")
-        .fillColor("#1a2c56") // Dark blue
-        .text("Auto Appraiser", leftX + logoWidth + 10, topY + 5);
+    // Main title - "Auto Appraiser"
+    doc
+      .fontSize(20)
+      .font("Helvetica-Bold")
+      .fillColor("#051c34")
+      .text("Auto Appraiser", leftX, topY);
 
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(16)
-        .text("Assistant", leftX + logoWidth + 10, topY + 22);
-    } catch (err) {
-      doc.fontSize(12).fillColor("red").text("Logo failed to load", leftX, topY);
-    }
+    // Subtitle - "ASSISTANT" with gradient
+    // 14px size, 0.2em letter spacing (~2.8)
+    doc
+      .fontSize(14)
+      .font("Helvetica-Bold")
+      .fillColor(gradient)
+      .text("ASSISTANT", leftX, topY + 22, { characterSpacing: 2.8 });
+
+    // Accent line under ASSISTANT
+    // width = 14 * 5.5 = 77
+    doc
+      .rect(leftX, topY + 36, 77, 2)
+      .fill(gradient);
 
     // Right side text
     const rightX = doc.page.width - doc.page.margins.right - 200;
